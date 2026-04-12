@@ -27,6 +27,7 @@ app.use('/api/alumnos', require('./routes/alumnos'));
 app.use('/api/pagos', require('./routes/pagos'));
 app.use('/api/asignaciones', require('./routes/asignaciones'));
 app.use('/api/admin', require('./routes/admin'));
+app.use('/api/notificaciones', require('./routes/notificaciones'));
 
 // Ubicación actual del bus
 let ubicacionBus = {

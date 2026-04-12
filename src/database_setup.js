@@ -1,7 +1,10 @@
 require('dotenv').config();
-const pool = require('./database');
+const { Pool } = require('pg');
 
-const pool = require('./database');
+const pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    ssl: { rejectUnauthorized: false }
+});
 
 const crearTablas = async () => {
     try {
@@ -73,13 +76,12 @@ const crearTablas = async () => {
 
         console.log('✅ Tablas creadas correctamente');
 
-        // Insertar datos iniciales
         await pool.query(`
       INSERT INTO usuarios (nombre, email, password, rol, telefono, dui)
       VALUES 
-        ('Ana Admin',       'admin@test.com',     '$2a$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'admin',     '7000-0001', '00000001-0'),
-        ('Luis Conductor',  'conductor@test.com', '$2a$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'conductor', '7000-0002', '00000002-0'),
-        ('Carlos Padre',    'padre@test.com',     '$2a$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'padre',     '7000-0003', '00000003-0')
+        ('Ana Admin',      'admin@test.com',     '$2a$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'admin',     '7000-0001', '00000001-0'),
+        ('Luis Conductor', 'conductor@test.com', '$2a$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'conductor', '7000-0002', '00000002-0'),
+        ('Carlos Padre',   'padre@test.com',     '$2a$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'padre',     '7000-0003', '00000003-0')
       ON CONFLICT (email) DO NOTHING;
 
       INSERT INTO rutas (nombre, conductor_id)
@@ -100,7 +102,7 @@ const crearTablas = async () => {
         process.exit(0);
 
     } catch (error) {
-        console.error('❌ Error:', error);
+        console.error('❌ Error:', error.message);
         process.exit(1);
     }
 };

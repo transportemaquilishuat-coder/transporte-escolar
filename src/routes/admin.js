@@ -114,4 +114,32 @@ router.get('/eventos-hoy', async (req, res) => {
     }
 });
 
+// GET /api/admin/configuracion
+router.get('/configuracion', async (req, res) => {
+    try {
+        const resultado = await pool.query('SELECT * FROM configuracion ORDER BY clave');
+        res.json({ configuracion: resultado.rows });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// PUT /api/admin/configuracion/:clave
+router.put('/configuracion/:clave', async (req, res) => {
+    const { valor } = req.body;
+    try {
+        const resultado = await pool.query(
+            `UPDATE configuracion 
+       SET valor = $1, actualizado_en = NOW()
+       WHERE clave = $2 RETURNING *`,
+            [valor, req.params.clave]
+        );
+        if (resultado.rows.length === 0)
+            return res.status(404).json({ error: 'Configuración no encontrada' });
+        res.json({ mensaje: 'Configuración actualizada', config: resultado.rows[0] });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 module.exports = router;

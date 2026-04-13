@@ -2,13 +2,13 @@ require('dotenv').config();
 const { Pool } = require('pg');
 
 const pool = new Pool({
-    connectionString: process.env.DATABASE_URL,
-    ssl: { rejectUnauthorized: false }
+  connectionString: process.env.DATABASE_URL,
+  ssl: { rejectUnauthorized: false }
 });
 
 const crearTablas = async () => {
-    try {
-        await pool.query(`
+  try {
+    await pool.query(`
       CREATE TABLE IF NOT EXISTS usuarios (
         id SERIAL PRIMARY KEY,
         nombre VARCHAR(100) NOT NULL,
@@ -72,11 +72,28 @@ const crearTablas = async () => {
         estado VARCHAR(20) DEFAULT 'pendiente',
         creado_en TIMESTAMP DEFAULT NOW()
       );
+
+      CREATE TABLE IF NOT EXISTS tokens_push (
+        id SERIAL PRIMARY KEY,
+        usuario_id INTEGER REFERENCES usuarios(id),
+        token VARCHAR(255) NOT NULL,
+        plataforma VARCHAR(10),
+        activo BOOLEAN DEFAULT true,
+        creado_en TIMESTAMP DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS configuracion (
+        id SERIAL PRIMARY KEY,
+        clave VARCHAR(100) UNIQUE NOT NULL,
+        valor VARCHAR(255) NOT NULL,
+        descripcion TEXT,
+        actualizado_en TIMESTAMP DEFAULT NOW()
+      );
     `);
 
-        console.log('✅ Tablas creadas correctamente');
+    console.log('✅ Tablas creadas correctamente');
 
-        await pool.query(`
+    await pool.query(`
       INSERT INTO usuarios (nombre, email, password, rol, telefono, dui)
       VALUES 
         ('Ana Admin',      'admin@test.com',     '$2a$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'admin',     '7000-0001', '00000001-0'),
@@ -96,15 +113,22 @@ const crearTablas = async () => {
         ('Sofía Hernández', '4to primaria', 1, 3, 'Col. Santa Marta',  4),
         ('Luis Ramírez',    '1ro primaria', 1, 3, 'Col. Las Mercedes', 5)
       ON CONFLICT DO NOTHING;
+
+      INSERT INTO configuracion (clave, valor, descripcion)
+      VALUES 
+        ('llamadas_conductor',        'true',  'Permitir que padres llamen al conductor'),
+        ('mostrar_numero_conductor',  'true',  'Mostrar número del conductor a los padres'),
+        ('periodo_prueba_dias',       '30',    'Días de período de prueba gratuito')
+      ON CONFLICT (clave) DO NOTHING;
     `);
 
-        console.log('✅ Datos iniciales insertados');
-        process.exit(0);
+    console.log('✅ Datos iniciales insertados');
+    process.exit(0);
 
-    } catch (error) {
-        console.error('❌ Error:', error.message);
-        process.exit(1);
-    }
+  } catch (error) {
+    console.error('❌ Error:', error.message);
+    process.exit(1);
+  }
 };
 
 crearTablas();

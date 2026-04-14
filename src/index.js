@@ -8,19 +8,30 @@ dotenv.config();
 
 const app = express();
 const server = http.createServer(app);
+
+// 🔥 SOCKET.IO CONFIG
 const io = new Server(server, {
-    cors: { origin: '*', methods: ['GET', 'POST'] }
+    cors: {
+        origin: '*',
+        methods: ['GET', 'POST']
+    }
 });
 
 const PORT = process.env.PORT || 3000;
 
+// 🔧 MIDDLEWARES
 app.use(cors());
 app.use(express.json());
 
+// 🌐 RUTA BASE
 app.get('/', (req, res) => {
-    res.json({ mensaje: '🚌 API Transporte Escolar funcionando', version: '1.0.0' });
+    res.json({
+        mensaje: '🚌 API Transporte Escolar funcionando',
+        version: '2.0.0'
+    });
 });
 
+// 📦 RUTAS API
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/rutas', require('./routes/rutas'));
 app.use('/api/alumnos', require('./routes/alumnos'));
@@ -29,50 +40,115 @@ app.use('/api/asignaciones', require('./routes/asignaciones'));
 app.use('/api/admin', require('./routes/admin'));
 app.use('/api/notificaciones', require('./routes/notificaciones'));
 
-// Ubicación actual del bus
+// ================================
+// 🚍 ESTADO GLOBAL EN MEMORIA
+// ================================
+
+// Ubicación general (para compatibilidad con app padre)
 let ubicacionBus = {
     latitude: 13.6929,
     longitude: -89.2182,
-    conductor: null,
+    conductorId: null,
     activo: false,
 };
 
-// Endpoint para consultar ubicación actual del bus
+// 🔥 MULTI-CONDUCTORES (clave para admin PRO)
+let conductoresActivos = {};
+
+// ================================
+// 📍 ENDPOINT REST (fallback)
+// ================================
 app.get('/api/ubicacion', (req, res) => {
     res.json(ubicacionBus);
 });
 
-// WebSocket
+// ================================
+// ⚡ WEBSOCKET (TIEMPO REAL REAL)
+// ================================
 io.on('connection', (socket) => {
-    console.log(`📱 Dispositivo conectado: ${socket.id}`);
 
+    console.log(`🟢 Cliente conectado: ${socket.id}`);
+
+    // 🚍 Conductor envía ubicación
     socket.on('conductor:ubicacion', (datos) => {
-        ubicacionBus = { ...datos, activo: true };
+
+        // Guardar última ubicación global
+        ubicacionBus = {
+            latitude: datos.latitude,
+            longitude: datos.longitude,
+            conductorId: datos.conductorId || null,
+            activo: true,
+        };
+
+        // Guardar por conductor (multi-ruta)
+        if (datos.conductorId) {
+            conductoresActivos[datos.conductorId] = {
+                id: datos.conductorId,
+                latitude: datos.latitude,
+                longitude: datos.longitude,
+                nombre: datos.nombre || 'Conductor',
+                ruta: datos.ruta || 'Sin ruta',
+                activo: true,
+                ultimaActualizacion: new Date().toISOString(),
+            };
+        }
+
+        // 📡 Emitir a TODOS
         io.emit('bus:ubicacion', ubicacionBus);
-        console.log(`📍 Bus en: ${datos.latitude}, ${datos.longitude}`);
+        io.emit('admin:conductores_activos', Object.values(conductoresActivos));
+
     });
 
+    // 🟢 Inicio de ruta
     socket.on('conductor:inicio_ruta', (datos) => {
         ubicacionBus.activo = true;
+
         io.emit('bus:inicio_ruta', datos);
-        console.log('🟢 Ruta iniciada');
+        console.log(`🟢 Ruta iniciada por conductor ${datos.conductorId}`);
     });
 
+    // 🔴 Fin de ruta
     socket.on('conductor:fin_ruta', (datos) => {
+
         ubicacionBus.activo = false;
+
+        if (datos.conductorId) {
+            delete conductoresActivos[datos.conductorId];
+        }
+
         io.emit('bus:fin_ruta', datos);
-        console.log('🔴 Ruta finalizada');
+        io.emit('admin:conductores_activos', Object.values(conductoresActivos));
+
+        console.log(`🔴 Ruta finalizada por conductor ${datos.conductorId}`);
     });
 
+    // 👨‍👩‍👧 Padre solicita ubicación
     socket.on('padre:solicitar_ubicacion', () => {
         socket.emit('bus:ubicacion', ubicacionBus);
     });
 
-    socket.on('disconnect', () => {
-        console.log(`📱 Dispositivo desconectado: ${socket.id}`);
+    // 🧑‍💼 Admin solicita lista activa
+    socket.on('admin:solicitar_conductores', () => {
+        socket.emit('admin:conductores_activos', Object.values(conductoresActivos));
     });
+
+    // 🔌 Desconexión
+    socket.on('disconnect', () => {
+        console.log(`🔴 Cliente desconectado: ${socket.id}`);
+    });
+
 });
 
+// ================================
+// 🚀 START SERVER
+// ================================
+// Admin consulta conductores activos (REST fallback)
+app.get('/api/admin/conductores-activos', (req, res) => {
+    res.json({
+        conductores: Object.values(conductoresActivos),
+        total: Object.values(conductoresActivos).length,
+    });
+});
 server.listen(PORT, '0.0.0.0', () => {
-    console.log(`✅ Servidor corriendo en http://localhost:${PORT}`);
+    console.log(`✅ Servidor corriendo en puerto ${PORT}`);
 });

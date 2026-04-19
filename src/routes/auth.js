@@ -5,6 +5,8 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const pool = require('../database');
 
+const ROLES_VALIDOS_USUARIO = ['padre', 'conductor', 'admin'];
+
 // POST /api/auth/login
 router.post('/login', async (req, res) => {
     const { email, password } = req.body;
@@ -13,22 +15,58 @@ router.post('/login', async (req, res) => {
         return res.status(400).json({ error: 'Email y contraseña requeridos' });
 
     try {
-        const resultado = await pool.query(
-            'SELECT * FROM usuarios WHERE email = $1 AND activo = true',
+        const resultadoUsuarios = await pool.query(
+            `SELECT u.*, c.logo_url AS colegio_logo_url, c.nombre AS colegio_nombre
+             FROM usuarios u
+             LEFT JOIN colegios c ON c.id = u.colegio_id
+             WHERE u.email = $1 AND u.activo = true`,
             [email.toLowerCase()]
         );
 
-        if (resultado.rows.length === 0)
+        if (resultadoUsuarios.rows.length > 0) {
+            const usuario = resultadoUsuarios.rows[0];
+            const passwordValida = await bcrypt.compare(password, usuario.password);
+
+            if (!passwordValida)
+                return res.status(401).json({ error: 'Credenciales incorrectas' });
+
+            const token = jwt.sign(
+                { id: usuario.id, email: usuario.email, rol: usuario.rol, tipo: 'usuario' },
+                process.env.JWT_SECRET,
+                { expiresIn: '24h' }
+            );
+
+            return res.json({
+                token,
+                usuario: {
+                    id: usuario.id,
+                    nombre: usuario.nombre,
+                    email: usuario.email,
+                    rol: usuario.rol,
+                    telefono: usuario.telefono,
+                    colegioId: usuario.colegio_id,
+                    colegioNombre: usuario.colegio_nombre || null,
+                    logoUrl: usuario.colegio_logo_url || null,
+                }
+            });
+        }
+
+        const resultadoSuperAdmin = await pool.query(
+            'SELECT * FROM super_admins WHERE email = $1',
+            [email.toLowerCase()]
+        );
+
+        if (resultadoSuperAdmin.rows.length === 0)
             return res.status(401).json({ error: 'Credenciales incorrectas' });
 
-        const usuario = resultado.rows[0];
-        const passwordValida = await bcrypt.compare(password, usuario.password);
+        const superAdmin = resultadoSuperAdmin.rows[0];
+        const passwordValida = await bcrypt.compare(password, superAdmin.password);
 
         if (!passwordValida)
             return res.status(401).json({ error: 'Credenciales incorrectas' });
 
         const token = jwt.sign(
-            { id: usuario.id, email: usuario.email, rol: usuario.rol },
+            { id: superAdmin.id, email: superAdmin.email, rol: 'super_admin', tipo: 'super_admin' },
             process.env.JWT_SECRET,
             { expiresIn: '24h' }
         );
@@ -36,11 +74,10 @@ router.post('/login', async (req, res) => {
         res.json({
             token,
             usuario: {
-                id: usuario.id,
-                nombre: usuario.nombre,
-                email: usuario.email,
-                rol: usuario.rol,
-                telefono: usuario.telefono,
+                id: superAdmin.id,
+                nombre: superAdmin.nombre,
+                email: superAdmin.email,
+                rol: 'super_admin',
             }
         });
 
@@ -56,6 +93,10 @@ router.post('/registro', async (req, res) => {
 
     if (!nombre || !email || !password || !rol)
         return res.status(400).json({ error: 'Campos requeridos incompletos' });
+
+    if (!ROLES_VALIDOS_USUARIO.includes(rol)) {
+        return res.status(400).json({ error: 'Rol inválido para registro público' });
+    }
 
     try {
         const existe = await pool.query(

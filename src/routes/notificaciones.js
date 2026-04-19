@@ -3,7 +3,6 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../database');
 
-// Primero agregamos la tabla de tokens
 const crearTablaTokens = async () => {
     await pool.query(`
     CREATE TABLE IF NOT EXISTS tokens_push (
@@ -18,14 +17,64 @@ const crearTablaTokens = async () => {
 };
 crearTablaTokens();
 
-// POST /api/notificaciones/token
+const obtenerColegioPorRuta = async (rutaId) => {
+    if (!rutaId) {
+        return null;
+    }
+
+    const resultado = await pool.query(
+        'SELECT colegio_id FROM rutas WHERE id = $1',
+        [rutaId]
+    );
+
+    if (resultado.rows.length === 0) {
+        return null;
+    }
+
+    return resultado.rows[0].colegio_id || null;
+};
+
+const construirMensajeAlerta = async ({ colegioId, minutosRestantes }) => {
+    const minutos = Number(minutosRestantes);
+    const esLlegadaInminente = minutos <= 1;
+
+    let titulo = esLlegadaInminente
+        ? 'El bus está llegando'
+        : `El bus llega en ${minutos} minutos`;
+
+    let cuerpo = esLlegadaInminente
+        ? 'El bus escolar está llegando a tu parada'
+        : `Prepara a tu hijo, el bus escolar llegará en ${minutos} minutos`;
+
+    let anuncio = null;
+
+    if (colegioId && minutos === 5) {
+        const resultado = await pool.query(
+            `SELECT id, titulo, mensaje, orden
+             FROM anuncios_voz
+             WHERE colegio_id = $1 AND activo = true
+             ORDER BY orden, id
+             LIMIT 1`,
+            [colegioId]
+        );
+
+        if (resultado.rows.length > 0) {
+            anuncio = resultado.rows[0];
+            titulo = anuncio.titulo || titulo;
+            cuerpo = anuncio.mensaje;
+        }
+    }
+
+    return { titulo, cuerpo, anuncio };
+};
+
 router.post('/token', async (req, res) => {
     const { usuarioId, token, plataforma } = req.body;
     try {
         await pool.query(
             `INSERT INTO tokens_push (usuario_id, token, plataforma)
-       VALUES ($1, $2, $3)
-       ON CONFLICT DO NOTHING`,
+             VALUES ($1, $2, $3)
+             ON CONFLICT DO NOTHING`,
             [usuarioId, token, plataforma]
         );
         res.json({ mensaje: 'Token registrado correctamente' });
@@ -34,7 +83,6 @@ router.post('/token', async (req, res) => {
     }
 });
 
-// POST /api/notificaciones/enviar
 router.post('/enviar', async (req, res) => {
     const { usuarioId, titulo, mensaje } = req.body;
     try {
@@ -47,8 +95,7 @@ router.post('/enviar', async (req, res) => {
             return res.json({ mensaje: 'No hay tokens registrados para este usuario' });
         }
 
-        // Enviar via Expo Push API
-        const mensajes = tokens.rows.map(t => ({
+        const mensajes = tokens.rows.map((t) => ({
             to: t.token,
             title: titulo,
             body: mensaje,
@@ -61,53 +108,55 @@ router.post('/enviar', async (req, res) => {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',
-                'Accept': 'application/json',
+                Accept: 'application/json',
             },
             body: JSON.stringify(mensajes),
         });
 
         const resultado = await respuesta.json();
         res.json({ mensaje: 'Notificación enviada', resultado });
-
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
 });
 
-// POST /api/notificaciones/alerta-bus
 router.post('/alerta-bus', async (req, res) => {
-    const { rutaId, minutosRestantes } = req.body;
+    const { rutaId, minutosRestantes, colegioId } = req.body;
+
     try {
-        // Obtener todos los padres de la ruta
+        const colegioRelacionadoId = colegioId || await obtenerColegioPorRuta(rutaId);
+
         const padres = await pool.query(
             `SELECT DISTINCT a.padre_id, u.nombre
-       FROM alumnos a
-       JOIN usuarios u ON u.id = a.padre_id
-       WHERE a.ruta_id = $1 AND a.activo = true`,
+             FROM alumnos a
+             JOIN usuarios u ON u.id = a.padre_id
+             WHERE a.ruta_id = $1 AND a.activo = true`,
             [rutaId]
         );
 
         const tokens = await pool.query(
             `SELECT tp.token, u.nombre
-       FROM tokens_push tp
-       JOIN usuarios u ON u.id = tp.usuario_id
-       WHERE tp.usuario_id = ANY($1) AND tp.activo = true`,
-            [padres.rows.map(p => p.padre_id)]
+             FROM tokens_push tp
+             JOIN usuarios u ON u.id = tp.usuario_id
+             WHERE tp.usuario_id = ANY($1) AND tp.activo = true`,
+            [padres.rows.map((p) => p.padre_id)]
         );
 
+        const { titulo, cuerpo, anuncio } = await construirMensajeAlerta({
+            colegioId: colegioRelacionadoId,
+            minutosRestantes,
+        });
+
         if (tokens.rows.length === 0) {
-            return res.json({ mensaje: 'No hay tokens registrados' });
+            return res.json({
+                mensaje: 'No hay tokens registrados',
+                mensajeAudio: cuerpo,
+                anuncio,
+                colegioId: colegioRelacionadoId,
+            });
         }
 
-        const titulo = minutosRestantes <= 1
-            ? '🚌 El bus está llegando'
-            : `🚌 El bus llega en ${minutosRestantes} minutos`;
-
-        const cuerpo = minutosRestantes <= 1
-            ? 'El bus escolar está llegando a tu parada'
-            : `Prepara a tu hijo, el bus escolar llegará en ${minutosRestantes} minutos`;
-
-        const mensajes = tokens.rows.map(t => ({
+        const mensajes = tokens.rows.map((t) => ({
             to: t.token,
             title: titulo,
             body: cuerpo,
@@ -122,8 +171,12 @@ router.post('/alerta-bus', async (req, res) => {
             body: JSON.stringify(mensajes),
         });
 
-        res.json({ mensaje: `Alerta enviada a ${tokens.rows.length} padres` });
-
+        res.json({
+            mensaje: `Alerta enviada a ${tokens.rows.length} padres`,
+            mensajeAudio: cuerpo,
+            anuncio,
+            colegioId: colegioRelacionadoId,
+        });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }

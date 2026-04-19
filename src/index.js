@@ -38,7 +38,10 @@ app.use('/api/alumnos', require('./routes/alumnos'));
 app.use('/api/pagos', require('./routes/pagos'));
 app.use('/api/asignaciones', require('./routes/asignaciones'));
 app.use('/api/admin', require('./routes/admin'));
+app.use('/api/super-admin', require('./routes/superAdmin'));
 app.use('/api/notificaciones', require('./routes/notificaciones'));
+app.use('/api/padres', require('./routes/padres'));
+app.use('/api/colegios', require('./routes/colegios'));
 
 // ================================
 // 🚍 ESTADO GLOBAL EN MEMORIA

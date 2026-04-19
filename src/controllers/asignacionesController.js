@@ -1,82 +1,322 @@
-// Datos simulados — luego los conectamos a PostgreSQL
-const rutas = [
-    { id: 1, nombre: 'Ruta Norte', conductorId: 2 },
-    { id: 2, nombre: 'Ruta Sur', conductorId: 2 },
-];
+const pool = require('../database');
 
-const alumnos = [
-    { id: 1, nombre: 'Pedro García', grado: '3ro primaria', rutaId: 1, parada: 'Col. San Benito', orden: 1, estado: 'pendiente' },
-    { id: 2, nombre: 'María López', grado: '5to primaria', rutaId: 1, parada: 'Col. Escalón', orden: 2, estado: 'pendiente' },
-    { id: 3, nombre: 'Juan Martínez', grado: '2do primaria', rutaId: 1, parada: 'Col. Miramonte', orden: 3, estado: 'pendiente' },
-    { id: 4, nombre: 'Sofía Hernández', grado: '4to primaria', rutaId: 1, parada: 'Col. Santa Marta', orden: 4, estado: 'pendiente' },
-    { id: 5, nombre: 'Luis Ramírez', grado: '1ro primaria', rutaId: 1, parada: 'Col. Las Mercedes', orden: 5, estado: 'pendiente' },
-];
-
-const ausencias = [];
-
-// GET /api/asignaciones/conductor/:conductorId
-exports.alumnosPorConductor = (req, res) => {
-    const conductorId = parseInt(req.params.conductorId);
-    const rutasDelConductor = rutas.filter(r => r.conductorId === conductorId);
-
-    if (rutasDelConductor.length === 0) {
-        return res.status(404).json({ error: 'No se encontraron rutas para este conductor' });
-    }
-
-    const rutaIds = rutasDelConductor.map(r => r.id);
-    const alumnosDeRuta = alumnos
-        .filter(a => rutaIds.includes(a.rutaId))
-        .map(a => ({
-            ...a,
-            ausente: ausencias.some(au => au.alumnoId === a.id && au.fecha === hoy()),
-        }))
-        .sort((a, b) => a.orden - b.orden);
-
-    res.json({
-        rutas: rutasDelConductor,
-        alumnos: alumnosDeRuta,
-        totalAlumnos: alumnosDeRuta.length,
-        ausentes: alumnosDeRuta.filter(a => a.ausente).length,
-    });
+const CONFIG_UI_POR_DEFECTO = {
+    mostrarAvisoAbordaje: false,
+    requiereUbicacionRecogida: false,
+    mostrarAvisoAusentesRuta: false,
+    permitirInscripcionConductor: true,
 };
 
-// POST /api/asignaciones/ausencia
-exports.reportarAusencia = (req, res) => {
+const obtenerConfiguracionUi = async () => {
+    const resultado = await pool.query(
+        `SELECT clave, valor
+         FROM configuracion
+         WHERE clave = ANY($1::text[])`,
+        [[
+            'mostrar_aviso_abordaje',
+            'requiere_ubicacion_recogida',
+            'mostrar_aviso_ausentes_ruta',
+            'permitir_inscripcion_conductor',
+        ]]
+    );
+
+    const configuracion = { ...CONFIG_UI_POR_DEFECTO };
+    for (const item of resultado.rows) {
+        const valor = String(item.valor).toLowerCase() === 'true';
+        if (item.clave === 'mostrar_aviso_abordaje') configuracion.mostrarAvisoAbordaje = valor;
+        if (item.clave === 'requiere_ubicacion_recogida') configuracion.requiereUbicacionRecogida = valor;
+        if (item.clave === 'mostrar_aviso_ausentes_ruta') configuracion.mostrarAvisoAusentesRuta = valor;
+        if (item.clave === 'permitir_inscripcion_conductor') configuracion.permitirInscripcionConductor = valor;
+    }
+
+    return configuracion;
+};
+
+exports.alumnosPorConductor = async (req, res) => {
+    const conductorId = Number(req.params.conductorId);
+
+    if (!Number.isInteger(conductorId)) {
+        return res.status(400).json({ error: 'conductorId invalido' });
+    }
+
+    try {
+        const configuracionUi = await obtenerConfiguracionUi();
+        const rutasResult = await pool.query(
+            `SELECT r.id, r.nombre, r.conductor_id AS "conductorId", u.nombre AS conductor_nombre
+             FROM rutas r
+             LEFT JOIN usuarios u ON u.id = r.conductor_id
+             WHERE r.conductor_id = $1 AND r.activa = true
+             ORDER BY r.nombre`,
+            [conductorId]
+        );
+
+        if (rutasResult.rows.length === 0) {
+            return res.status(404).json({ error: 'No se encontraron rutas para este conductor' });
+        }
+
+        const alumnosResult = await pool.query(
+            `SELECT
+                a.id,
+                a.nombre,
+                a.grado,
+                a.ruta_id AS "rutaId",
+                a.parada,
+                a.latitude,
+                a.longitude,
+                a.orden,
+                CASE
+                    WHEN EXISTS (
+                        SELECT 1
+                        FROM eventos_ruta er
+                        WHERE er.tipo = 'abordado'
+                          AND er.descripcion = CONCAT('alumnoId:', a.id)
+                          AND DATE(er.creado_en) = CURRENT_DATE
+                    ) THEN 'abordado'
+                    ELSE 'pendiente'
+                END AS estado,
+                EXISTS (
+                    SELECT 1
+                    FROM ausencias au
+                    WHERE au.alumno_id = a.id
+                      AND au.fecha = CURRENT_DATE
+                ) AS ausente
+             FROM alumnos a
+             WHERE a.activo = true
+               AND a.ruta_id = ANY($1::int[])
+             ORDER BY a.orden, a.nombre`,
+            [rutasResult.rows.map((ruta) => ruta.id)]
+        );
+
+        res.json({
+            rutas: rutasResult.rows.map((ruta) => ({
+                id: ruta.id,
+                nombre: ruta.nombre,
+                conductorId: ruta.conductorId,
+                conductor_nombre: ruta.conductor_nombre,
+            })),
+            alumnos: alumnosResult.rows,
+            totalAlumnos: alumnosResult.rows.length,
+            ausentes: alumnosResult.rows.filter((alumno) => alumno.ausente).length,
+            configuracionUi,
+        });
+    } catch (error) {
+        console.error('Error alumnosPorConductor:', error.message);
+        res.status(500).json({ error: 'Error obteniendo asignaciones del conductor' });
+    }
+};
+
+exports.reportarAusencia = async (req, res) => {
     const { alumnoId, padreNombre, motivo } = req.body;
+
     if (!alumnoId) {
         return res.status(400).json({ error: 'alumnoId es requerido' });
     }
-    const ausencia = {
-        id: ausencias.length + 1,
-        alumnoId,
-        padreNombre: padreNombre || 'Padre',
-        motivo: motivo || 'Sin especificar',
-        fecha: hoy(),
-        hora: new Date().toLocaleTimeString('es-SV', { hour: '2-digit', minute: '2-digit' }),
-    };
-    ausencias.push(ausencia);
-    res.json({ mensaje: 'Ausencia reportada correctamente', ausencia });
-};
 
-// GET /api/asignaciones/ausencias/:rutaId
-exports.ausenciasDeLaRuta = (req, res) => {
-    const rutaId = parseInt(req.params.rutaId);
-    const alumnosRuta = alumnos.filter(a => a.rutaId === rutaId).map(a => a.id);
-    const ausenciasHoy = ausencias.filter(
-        au => alumnosRuta.includes(au.alumnoId) && au.fecha === hoy()
-    );
-    res.json({ ausencias: ausenciasHoy, total: ausenciasHoy.length });
-};
+    try {
+        const alumnoResult = await pool.query(
+            `SELECT a.id, a.padre_id, COALESCE(u.nombre, 'Padre') AS padre_nombre
+             FROM alumnos a
+             LEFT JOIN usuarios u ON u.id = a.padre_id
+             WHERE a.id = $1`,
+            [alumnoId]
+        );
 
-// POST /api/asignaciones/abordar
-exports.marcarAbordado = (req, res) => {
-    const { alumnoId } = req.body;
-    const alumno = alumnos.find(a => a.id === alumnoId);
-    if (!alumno) {
-        return res.status(404).json({ error: 'Alumno no encontrado' });
+        if (alumnoResult.rows.length === 0) {
+            return res.status(404).json({ error: 'Alumno no encontrado' });
+        }
+
+        const alumno = alumnoResult.rows[0];
+
+        const existente = await pool.query(
+            `SELECT * FROM ausencias
+             WHERE alumno_id = $1 AND fecha = CURRENT_DATE`,
+            [alumnoId]
+        );
+
+        if (existente.rows.length > 0) {
+            return res.json({
+                mensaje: 'La ausencia ya estaba reportada para hoy',
+                ausencia: {
+                    id: existente.rows[0].id,
+                    alumnoId,
+                    padreNombre: padreNombre || alumno.padre_nombre,
+                    motivo: existente.rows[0].motivo,
+                    fecha: existente.rows[0].fecha,
+                    hora: existente.rows[0].hora,
+                },
+            });
+        }
+
+        const resultado = await pool.query(
+            `INSERT INTO ausencias (alumno_id, padre_id, motivo, fecha, hora)
+             VALUES ($1, $2, $3, CURRENT_DATE, CURRENT_TIME)
+             RETURNING id, alumno_id, padre_id, motivo, fecha, hora`,
+            [alumnoId, alumno.padre_id, motivo || 'Sin especificar']
+        );
+
+        const ausencia = resultado.rows[0];
+        res.json({
+            mensaje: 'Ausencia reportada correctamente',
+            ausencia: {
+                id: ausencia.id,
+                alumnoId: ausencia.alumno_id,
+                padreNombre: padreNombre || alumno.padre_nombre,
+                motivo: ausencia.motivo,
+                fecha: ausencia.fecha,
+                hora: ausencia.hora,
+            },
+        });
+    } catch (error) {
+        console.error('Error reportarAusencia:', error.message);
+        res.status(500).json({ error: 'Error reportando ausencia' });
     }
-    alumno.estado = 'abordado';
-    res.json({ mensaje: `${alumno.nombre} marcado como abordado`, alumno });
 };
 
-const hoy = () => new Date().toISOString().split('T')[0];
+exports.ausenciasDeLaRuta = async (req, res) => {
+    const rutaId = Number(req.params.rutaId);
+
+    if (!Number.isInteger(rutaId)) {
+        return res.status(400).json({ error: 'rutaId invalido' });
+    }
+
+    try {
+        const resultado = await pool.query(
+            `SELECT
+                au.id,
+                au.alumno_id AS "alumnoId",
+                a.nombre AS alumno_nombre,
+                au.padre_id AS "padreId",
+                au.motivo,
+                au.fecha,
+                au.hora
+             FROM ausencias au
+             INNER JOIN alumnos a ON a.id = au.alumno_id
+             WHERE a.ruta_id = $1
+               AND au.fecha = CURRENT_DATE
+             ORDER BY au.creado_en DESC`,
+            [rutaId]
+        );
+
+        res.json({ ausencias: resultado.rows, total: resultado.rows.length });
+    } catch (error) {
+        console.error('Error ausenciasDeLaRuta:', error.message);
+        res.status(500).json({ error: 'Error obteniendo ausencias de la ruta' });
+    }
+};
+
+exports.marcarAbordado = async (req, res) => {
+    const { alumnoId } = req.body;
+
+    if (!alumnoId) {
+        return res.status(400).json({ error: 'alumnoId es requerido' });
+    }
+
+    try {
+        const alumnoResult = await pool.query(
+            `SELECT id, nombre, ruta_id
+             FROM alumnos
+             WHERE id = $1 AND activo = true`,
+            [alumnoId]
+        );
+
+        if (alumnoResult.rows.length === 0) {
+            return res.status(404).json({ error: 'Alumno no encontrado' });
+        }
+
+        const alumno = alumnoResult.rows[0];
+
+        const eventoExistente = await pool.query(
+            `SELECT id
+             FROM eventos_ruta
+             WHERE tipo = 'abordado'
+               AND descripcion = $1
+               AND DATE(creado_en) = CURRENT_DATE`,
+            [`alumnoId:${alumno.id}`]
+        );
+
+        if (eventoExistente.rows.length === 0) {
+            await pool.query(
+                `INSERT INTO eventos_ruta (ruta_id, conductor_id, tipo, descripcion)
+                 VALUES ($1, $2, 'abordado', $3)`,
+                [alumno.ruta_id, null, `alumnoId:${alumno.id}`]
+            );
+        }
+
+        res.json({
+            mensaje: `${alumno.nombre} marcado como abordado`,
+            alumno: {
+                id: alumno.id,
+                nombre: alumno.nombre,
+                estado: 'abordado',
+            },
+        });
+    } catch (error) {
+        console.error('Error marcarAbordado:', error.message);
+        res.status(500).json({ error: 'Error marcando abordaje' });
+    }
+};
+
+exports.inscribirAlumnoPorConductor = async (req, res) => {
+    const conductorId = Number(req.params.conductorId);
+    const {
+        nombre,
+        grado,
+        ruta_id,
+        padre_id,
+        parada,
+        orden,
+        latitude,
+        longitude,
+    } = req.body;
+
+    if (!Number.isInteger(conductorId)) {
+        return res.status(400).json({ error: 'conductorId invalido' });
+    }
+
+    if (!nombre || !ruta_id) {
+        return res.status(400).json({ error: 'nombre y ruta_id son requeridos' });
+    }
+
+    try {
+        const configuracionUi = await obtenerConfiguracionUi();
+        if (!configuracionUi.permitirInscripcionConductor) {
+            return res.status(403).json({ error: 'La inscripcion de alumnos por conductor esta deshabilitada' });
+        }
+
+        const rutaResult = await pool.query(
+            `SELECT id, nombre
+             FROM rutas
+             WHERE id = $1 AND conductor_id = $2 AND activa = true`,
+            [ruta_id, conductorId]
+        );
+
+        if (rutaResult.rows.length === 0) {
+            return res.status(403).json({ error: 'El conductor no tiene permisos sobre esta ruta' });
+        }
+
+        const resultado = await pool.query(
+            `INSERT INTO alumnos (nombre, grado, ruta_id, padre_id, parada, latitude, longitude, orden)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+             RETURNING id, nombre, grado, ruta_id AS "rutaId", padre_id AS "padreId", parada, latitude, longitude, orden, activo, creado_en`,
+            [
+                nombre,
+                grado ?? null,
+                ruta_id,
+                padre_id ?? null,
+                parada ?? null,
+                latitude ?? null,
+                longitude ?? null,
+                orden ?? null,
+            ]
+        );
+
+        res.status(201).json({
+            mensaje: 'Alumno inscrito correctamente por el conductor',
+            alumno: resultado.rows[0],
+            ruta: rutaResult.rows[0],
+        });
+    } catch (error) {
+        console.error('Error inscribirAlumnoPorConductor:', error.message);
+        res.status(500).json({ error: 'Error inscribiendo alumno para el conductor' });
+    }
+};

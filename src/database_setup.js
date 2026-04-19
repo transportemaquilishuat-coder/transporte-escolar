@@ -151,8 +151,25 @@ CREATE TABLE IF NOT EXISTS alertas_programadas (
   creado_en TIMESTAMP DEFAULT NOW(),
   actualizado_en TIMESTAMP DEFAULT NOW()
 );
-    `);
+    CREATE TABLE IF NOT EXISTS puntos_ruta (
+  id SERIAL PRIMARY KEY,
+  ruta_id INTEGER REFERENCES rutas(id),
+  latitud DECIMAL(10,8) NOT NULL,
+  longitud DECIMAL(11,8) NOT NULL,
+  orden INTEGER NOT NULL,
+  nombre_parada VARCHAR(100),
+  creado_en TIMESTAMP DEFAULT NOW()
+);
 
+INSERT INTO puntos_ruta (ruta_id, latitud, longitud, orden, nombre_parada)
+VALUES
+  (1, 13.6929, -89.2182, 1, 'Punto de inicio'),
+  (1, 13.6950, -89.2200, 2, 'Col. San Benito'),
+  (1, 13.6975, -89.2215, 3, 'Col. Escalón'),
+  (1, 13.7000, -89.2230, 4, 'Col. Miramonte'),
+  (1, 13.7020, -89.2250, 5, 'Colegio destino')
+ON CONFLICT DO NOTHING;
+`);
     console.log('✅ Tablas creadas correctamente');
 
     await pool.query(`
@@ -162,13 +179,6 @@ CREATE TABLE IF NOT EXISTS alertas_programadas (
         ('Luis Conductor', 'conductor@test.com', '$2a$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'conductor', '7000-0002', '00000002-0'),
         ('Carlos Padre',   'padre@test.com',     '$2a$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', 'padre',     '7000-0003', '00000003-0')
       ON CONFLICT (email) DO NOTHING;
-
-       INSERT INTO colegios (nombre, plan)
-VALUES 
-  ('Colegio San JosÃ©', 'activo'),
-  ('Colegio Santa MarÃ­a', 'trial'),
-  ('Colegio El Sagrado CorazÃ³n', 'trial')
-ON CONFLICT DO NOTHING;
 
       INSERT INTO rutas (nombre, conductor_id, colegio_id)
       VALUES ('Ruta Norte', 2, 1), ('Ruta Sur', 2, 1)
@@ -232,5 +242,4 @@ ON CONFLICT (tipo) DO NOTHING;
     process.exit(1);
   }
 };
-
 crearTablas();

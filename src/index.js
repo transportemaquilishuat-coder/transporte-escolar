@@ -42,6 +42,7 @@ app.use('/api/super-admin', require('./routes/superAdmin'));
 app.use('/api/notificaciones', require('./routes/notificaciones'));
 app.use('/api/padres', require('./routes/padres'));
 app.use('/api/colegios', require('./routes/colegios'));
+app.use('/api/desvios', require('./routes/desvios'));
 
 // ================================
 // 🚍 ESTADO GLOBAL EN MEMORIA

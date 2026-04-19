@@ -126,4 +126,55 @@ router.post('/registro', async (req, res) => {
     }
 });
 
+// GET /api/auth/perfil/:id
+router.get('/perfil/:id', async (req, res) => {
+    try {
+        const resultado = await pool.query(
+            'SELECT id, nombre, email, telefono, dui, licencia, placa, rol FROM usuarios WHERE id = $1',
+            [req.params.id]
+        );
+        if (resultado.rows.length === 0)
+            return res.status(404).json({ error: 'Usuario no encontrado' });
+        res.json(resultado.rows[0]);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// PUT /api/auth/perfil/:id
+router.put('/perfil/:id', async (req, res) => {
+    const { nombre, telefono, dui, licencia, placa } = req.body;
+    try {
+        const resultado = await pool.query(
+            `UPDATE usuarios SET nombre=$1, telefono=$2, dui=$3, licencia=$4, placa=$5
+       WHERE id=$6 RETURNING id, nombre, email, telefono, dui, licencia, placa`,
+            [nombre, telefono, dui, licencia, placa, req.params.id]
+        );
+        res.json(resultado.rows[0]);
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// POST /api/auth/cambiar-password
+router.post('/cambiar-password', async (req, res) => {
+    const { usuarioId, passwordActual, passwordNueva } = req.body;
+    try {
+        const resultado = await pool.query(
+            'SELECT * FROM usuarios WHERE id = $1', [usuarioId]
+        );
+        if (resultado.rows.length === 0)
+            return res.status(404).json({ error: 'Usuario no encontrado' });
+
+        const valida = await bcrypt.compare(passwordActual, resultado.rows[0].password);
+        if (!valida)
+            return res.status(401).json({ error: 'Contraseña actual incorrecta' });
+
+        const hash = await bcrypt.hash(passwordNueva, 10);
+        await pool.query('UPDATE usuarios SET password=$1 WHERE id=$2', [hash, usuarioId]);
+        res.json({ mensaje: 'Contraseña actualizada correctamente' });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
 module.exports = router;

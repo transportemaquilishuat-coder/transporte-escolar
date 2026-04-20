@@ -99,6 +99,31 @@ io.on('connection', (socket) => {
 
         // 📡 Emitir a TODOS
         io.emit('bus:ubicacion', ubicacionBus);
+        // Verificar desvío y notificar
+        if (datos.conductorId && datos.rutaId) {
+            fetch(`http://localhost:${PORT}/api/desvios/verificar`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    conductorId: datos.conductorId,
+                    rutaId: datos.rutaId,
+                    latitude: datos.latitude,
+                    longitude: datos.longitude,
+                }),
+            })
+                .then(r => r.json())
+                .then(resultado => {
+                    if (resultado.desviado) {
+                        io.emit('bus:desvio', {
+                            conductorId: datos.conductorId,
+                            distanciaMetros: resultado.distanciaMetros,
+                            mensaje: resultado.mensaje,
+                        });
+                        console.log(`⚠️ Desvío detectado: ${resultado.distanciaMetros}m`);
+                    }
+                })
+                .catch(e => console.log('Error verificando desvío:', e));
+        }
         io.emit('admin:conductores_activos', Object.values(conductoresActivos));
 
     });

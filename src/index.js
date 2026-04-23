@@ -3,6 +3,9 @@ const cors = require('cors');
 const dotenv = require('dotenv');
 const http = require('http');
 const { Server } = require('socket.io');
+const vinculacionesRoutes = require('./routes/vinculaciones');
+// ... otras rutas
+app.use('/api/vinculaciones', vinculacionesRoutes);
 
 dotenv.config();
 

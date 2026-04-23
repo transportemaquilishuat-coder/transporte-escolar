@@ -3,9 +3,6 @@ const cors = require('cors');
 const dotenv = require('dotenv');
 const http = require('http');
 const { Server } = require('socket.io');
-const vinculacionesRoutes = require('./routes/vinculaciones');
-// ... otras rutas
-app.use('/api/vinculaciones', vinculacionesRoutes);
 
 dotenv.config();
 
@@ -46,7 +43,7 @@ app.use('/api/notificaciones', require('./routes/notificaciones'));
 app.use('/api/padres', require('./routes/padres'));
 app.use('/api/colegios', require('./routes/colegios'));
 app.use('/api/desvios', require('./routes/desvios'));
-
+app.use('/api/vinculaciones', require('./routes/vinculaciones'));
 // ================================
 // 🚍 ESTADO GLOBAL EN MEMORIA
 // ================================

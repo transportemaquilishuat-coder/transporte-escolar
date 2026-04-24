@@ -91,19 +91,40 @@ const crearColegioSuperAdmin = async (req, res) => {
             return res.status(400).json({ error: 'El nombre del colegio es requerido' });
         }
 
-        const nuevoColegio = await pool.query(
-            `INSERT INTO colegios (nombre, logo_url, plan, activo, dias_prueba_restantes, admin_id)
-             VALUES ($1, $2, $3, $4, $5, $6)
-             RETURNING *`,
-            [
-                payload.nombre,
-                payload.logo_url,
-                payload.plan,
-                payload.activo,
-                payload.dias_prueba_restantes,
-                payload.admin_id,
-            ]
-        );
+        const columnaAdminId = await pool.query(`
+            SELECT 1
+            FROM information_schema.columns
+            WHERE table_name = 'colegios'
+              AND column_name = 'admin_id'
+            LIMIT 1
+        `);
+
+        const nuevoColegio = columnaAdminId.rows.length > 0
+            ? await pool.query(
+                `INSERT INTO colegios (nombre, logo_url, plan, activo, dias_prueba_restantes, admin_id)
+                 VALUES ($1, $2, $3, $4, $5, $6)
+                 RETURNING *`,
+                [
+                    payload.nombre,
+                    payload.logo_url,
+                    payload.plan,
+                    payload.activo,
+                    payload.dias_prueba_restantes,
+                    payload.admin_id,
+                ]
+            )
+            : await pool.query(
+                `INSERT INTO colegios (nombre, logo_url, plan, activo, dias_prueba_restantes)
+                 VALUES ($1, $2, $3, $4, $5)
+                 RETURNING *`,
+                [
+                    payload.nombre,
+                    payload.logo_url,
+                    payload.plan,
+                    payload.activo,
+                    payload.dias_prueba_restantes,
+                ]
+            );
 
         console.log('[CREAR COLEGIO] insert result:', nuevoColegio.rows[0]);
 
@@ -112,8 +133,15 @@ const crearColegioSuperAdmin = async (req, res) => {
             mensaje: 'Colegio creado correctamente',
         });
     } catch (error) {
-        console.error('Error creando colegio superadmin:', error);
-        return res.status(500).json({ error: 'Error interno del servidor' });
+        console.error('Error creando colegio superadmin:', {
+            message: error.message,
+            code: error.code,
+            detail: error.detail,
+            constraint: error.constraint,
+            table: error.table,
+            column: error.column,
+        });
+        return res.status(500).json({ error: error.message || 'Error interno del servidor' });
     }
 };
 

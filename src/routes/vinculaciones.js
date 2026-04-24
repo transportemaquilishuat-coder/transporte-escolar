@@ -4,19 +4,15 @@ const router = express.Router();
 const bcrypt = require('bcryptjs');
 const pool = require('../database');
 const { authenticateToken, requireRole } = require('../middleware/auth');
+const {
+    listarColegiosSuperAdmin,
+    crearColegioSuperAdmin,
+    generarCodigoAdminSuperAdmin,
+} = require('../controllers/colegiosSuperAdmin');
 
 // ============================================
 // UTILIDADES
 // ============================================
-
-const generarCodigo = (longitud = 8) => {
-    const caracteres = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-    let codigo = '';
-    for (let i = 0; i < longitud; i++) {
-        codigo += caracteres.charAt(Math.floor(Math.random() * caracteres.length));
-    }
-    return codigo;
-};
 
 const verificarCodigo = async (codigo, tipoRequerido) => {
     const resultado = await pool.query(
@@ -109,105 +105,15 @@ const resolverDestinoVinculacion = async (client, codigoData) => {
 
 // GET /api/vinculaciones/superadmin/colegios
 // Lista todos los colegios con su admin vinculado
-router.get('/superadmin/colegios', authenticateToken, requireRole('super_admin'), async (req, res) => {
-    try {
-        const resultado = await pool.query(`
-      SELECT 
-        c.id, c.nombre, c.logo_url, c.plan, c.activo, 
-        c.dias_prueba_restantes, c.creado_en,
-        c.admin_id,
-        u.nombre as admin_nombre, u.email as admin_email, u.telefono as admin_telefono
-      FROM colegios c
-      LEFT JOIN usuarios u ON u.id = c.admin_id
-      ORDER BY c.nombre
-    `);
-        res.json({ colegios: resultado.rows });
-    } catch (error) {
-        console.error('Error listando colegios:', error);
-        res.status(500).json({ error: 'Error interno del servidor' });
-    }
-});
+router.get('/superadmin/colegios', authenticateToken, requireRole('super_admin'), listarColegiosSuperAdmin);
 
 // POST /api/vinculaciones/superadmin/colegios
 // Crea un nuevo colegio
-router.post('/superadmin/colegios', authenticateToken, requireRole('super_admin'), async (req, res) => {
-    const { nombre, logo_url, plan = 'trial' } = req.body;
-
-    if (!nombre) {
-        return res.status(400).json({ error: 'El nombre del colegio es requerido' });
-    }
-
-    try {
-        const resultado = await pool.query(
-            `INSERT INTO colegios (nombre, logo_url, plan, dias_prueba_restantes)
-       VALUES ($1, $2, $3, $4) RETURNING *`,
-            [nombre, logo_url, plan, plan === 'trial' ? 30 : null]
-        );
-
-        res.status(201).json({
-            mensaje: 'Colegio creado correctamente',
-            colegio: resultado.rows[0]
-        });
-    } catch (error) {
-        console.error('Error creando colegio:', error);
-        res.status(500).json({ error: 'Error interno del servidor' });
-    }
-});
+router.post('/superadmin/colegios', authenticateToken, requireRole('super_admin'), crearColegioSuperAdmin);
 
 // POST /api/vinculaciones/superadmin/colegios/:colegioId/codigo
 // Genera c??digo de invitaci??n para que un admin se vincule a este colegio
-router.post('/superadmin/colegios/:colegioId/codigo', authenticateToken, requireRole('super_admin'), async (req, res) => {
-    const { colegioId } = req.params;
-    const { maxUsos = 1, diasValidez = 7 } = req.body;
-
-    try {
-        // Verificar que el colegio existe
-        const colegio = await pool.query('SELECT * FROM colegios WHERE id = $1', [colegioId]);
-        if (colegio.rows.length === 0) {
-            return res.status(404).json({ error: 'Colegio no encontrado' });
-        }
-
-        // Verificar que el colegio no tenga ya un admin
-        if (colegio.rows[0].admin_id) {
-            return res.status(400).json({ error: 'Este colegio ya tiene un administrador asignado' });
-        }
-
-        // Generar c??digo ??nico
-        let codigo;
-        let existe = true;
-        let intentos = 0;
-        do {
-            codigo = generarCodigo(8);
-            const check = await pool.query('SELECT id FROM codigos_invitacion WHERE codigo = $1', [codigo]);
-            existe = check.rows.length > 0;
-            intentos++;
-        } while (existe && intentos < 10);
-
-        if (existe) {
-            return res.status(500).json({ error: 'No se pudo generar un c??digo ??nico, intenta de nuevo' });
-        }
-
-        const expiraEn = diasValidez > 0
-            ? new Date(Date.now() + diasValidez * 24 * 60 * 60 * 1000)
-            : null;
-
-        const resultado = await pool.query(
-            `INSERT INTO codigos_invitacion (codigo, tipo, entidad_id, creado_por, max_usos, expira_en)
-       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-            [codigo, 'colegio_admin', colegioId, req.user.id, maxUsos, expiraEn]
-        );
-
-        res.status(201).json({
-            mensaje: 'C??digo de invitaci??n generado correctamente',
-            codigo: resultado.rows[0].codigo,
-            expira_en: resultado.rows[0].expira_en,
-            colegio: colegio.rows[0].nombre
-        });
-    } catch (error) {
-        console.error('Error generando c??digo:', error);
-        res.status(500).json({ error: 'Error interno del servidor' });
-    }
-});
+router.post('/superadmin/colegios/:colegioId/codigo', authenticateToken, requireRole('super_admin'), generarCodigoAdminSuperAdmin);
 
 // GET /api/vinculaciones/superadmin/codigos
 // Lista todos los códigos generados

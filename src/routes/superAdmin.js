@@ -4,6 +4,7 @@ const bcrypt = require('bcryptjs');
 const router = express.Router();
 const pool = require('../database');
 const { authenticateToken, requireRole } = require('../middleware/auth');
+const { listarColegiosSuperAdmin } = require('../controllers/colegiosSuperAdmin');
 
 router.use(authenticateToken, requireRole('super_admin'));
 
@@ -50,19 +51,7 @@ router.get('/dashboard', async (req, res) => {
     }
 });
 
-router.get('/colegios', async (req, res) => {
-    try {
-        const resultado = await pool.query(
-            `SELECT id, nombre, plan, activo, dias_prueba_restantes, creado_en
-             FROM colegios
-             ORDER BY nombre`
-        );
-
-        res.json({ colegios: resultado.rows });
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
-});
+router.get('/colegios', listarColegiosSuperAdmin);
 
 router.get('/anuncios', async (req, res) => {
     const { colegioId } = req.query;

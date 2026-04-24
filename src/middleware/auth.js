@@ -1,19 +1,29 @@
 const jwt = require('jsonwebtoken');
 
 function authenticateToken(req, res, next) {
-    const authHeader = req.headers.authorization || '';
-    const [scheme, token] = authHeader.split(' ');
+    console.log('--- AUTH CHECK ---');
+    console.log('method:', req.method);
+    console.log('path:', req.originalUrl);
+    console.log('authorization header:', req.headers.authorization);
 
-    if (scheme !== 'Bearer' || !token) {
+    const auth = req.headers.authorization || '';
+    const token = auth.startsWith('Bearer ') ? auth.slice(7) : null;
+
+    console.log('token exists:', !!token);
+    console.log('token preview:', token ? `${token.slice(0, 16)}...` : 'null');
+
+    if (!token) {
         return res.status(401).json({ error: 'Token requerido' });
     }
 
     try {
         const payload = jwt.verify(token, process.env.JWT_SECRET);
+        console.log('decoded payload:', payload);
         req.user = payload;
         next();
     } catch (error) {
-        return res.status(401).json({ error: 'Token inválido o expirado' });
+        console.error('jwt verify failed:', error.message);
+        return res.status(401).json({ error: `Token requerido: ${error.message}` });
     }
 }
 

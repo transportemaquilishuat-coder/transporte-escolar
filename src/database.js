@@ -19,6 +19,29 @@ const asegurarEsquema = async () => {
     `);
 
     await pool.query(`
+        ALTER TABLE colegios
+        ADD COLUMN IF NOT EXISTS admin_id INTEGER
+    `);
+
+    await pool.query(`
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1
+                FROM information_schema.table_constraints
+                WHERE constraint_name = 'fk_colegios_admin'
+            ) THEN
+                ALTER TABLE colegios
+                ADD CONSTRAINT fk_colegios_admin
+                FOREIGN KEY (admin_id) REFERENCES usuarios(id);
+            END IF;
+        EXCEPTION
+            WHEN undefined_table THEN
+                NULL;
+        END $$;
+    `);
+
+    await pool.query(`
         CREATE TABLE IF NOT EXISTS configuracion (
             id SERIAL PRIMARY KEY,
             clave VARCHAR(100) UNIQUE NOT NULL,

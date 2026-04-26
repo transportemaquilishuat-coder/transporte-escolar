@@ -1,0 +1,32 @@
+{
+  "expo": {
+    "name": "Transporte Escolar",
+    "slug": "transporte-escolar",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "platforms": [
+      "ios",
+      "android",
+      "web"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "08dab61e-7094-4e59-80a5-6f7d69c45b0e"
+      }
+    },
+    "android": {
+      "package": "com.daniel7901.transporteescolar",
+      "config": {
+        "googleMaps": {
+          "apiKey": "AIzaSyDVaVcUL_e_lO0nD29QUfOfl0u3RUUFEdM"
+        }
+      }
+    },
+    "ios": {
+      "bundleIdentifier": "com.daniel7901.transporteescolar",
+      "config": {
+        "googleMapsApiKey": "AIzaSyDVaVcUL_e_lO0nD29QUfOfl0u3RUUFEdM"
+      }
+    }
+  }
+}

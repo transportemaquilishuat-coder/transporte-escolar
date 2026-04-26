@@ -4,6 +4,7 @@ const router = express.Router();
 const bcrypt = require('bcryptjs');
 const pool = require('../database');
 const { authenticateToken, requireRole } = require('../middleware/auth');
+const { SESSION_EXPIRES_IN, firmarTokenSesion } = require('../utils/authTokens');
 const {
     listarColegiosSuperAdmin,
     crearColegioSuperAdmin,
@@ -47,8 +48,14 @@ const verificarCodigo = async (codigo, tipoRequerido) => {
 
 const TIPOS_CODIGO = ['colegio_admin', 'colegio_conductor', 'conductor_padre'];
 
+const normalizarCodigo = (codigo) =>
+    String(codigo || '')
+        .trim()
+        .toUpperCase()
+        .replace(/[^A-Z0-9]/g, '');
+
 const obtenerCodigoValido = async (codigo) => {
-    const codigoNormalizado = (codigo || '').trim().toUpperCase();
+    const codigoNormalizado = normalizarCodigo(codigo);
     let ultimoError = 'Codigo invalido';
 
     for (const tipo of TIPOS_CODIGO) {
@@ -120,16 +127,39 @@ router.post('/superadmin/colegios/:colegioId/codigo', authenticateToken, require
 router.get('/superadmin/codigos', authenticateToken, requireRole('super_admin'), async (req, res) => {
     try {
         const resultado = await pool.query(`
-      SELECT c.*, co.nombre as colegio_nombre, sa.nombre as creado_por_nombre
+      SELECT
+        c.id,
+        c.codigo,
+        c.tipo,
+        c.entidad_id,
+        c.creado_por,
+        c.usado_por,
+        c.usado_en,
+        c.max_usos,
+        c.usos_actuales,
+        c.activo,
+        c.expira_en,
+        c.creado_en,
+        co.nombre as colegio_nombre,
+        COALESCE(sa.nombre, u.nombre, 'Sistema') as creado_por_nombre
       FROM codigos_invitacion c
       LEFT JOIN colegios co ON co.id = c.entidad_id
       LEFT JOIN super_admins sa ON sa.id = c.creado_por
+      LEFT JOIN usuarios u ON u.id = c.creado_por
       WHERE c.tipo = 'colegio_admin'
       ORDER BY c.creado_en DESC
     `);
         res.json({ codigos: resultado.rows });
     } catch (error) {
-        console.error('Error listando códigos:', error);
+        console.error('Error listando códigos:', {
+            message: error.message,
+            code: error.code,
+            detail: error.detail,
+            hint: error.hint,
+            table: error.table,
+            column: error.column,
+            constraint: error.constraint,
+        });
         res.status(500).json({ error: 'Error interno del servidor' });
     }
 });
@@ -192,7 +222,7 @@ router.post('/registro-con-codigo', async (req, res) => {
         // Si es admin, actualizar el colegio
         if (rol === 'admin') {
             await pool.query(
-                'UPDATE colegios SET admin_id = $1 WHERE id = $2',
+                'UPDATE colegios SET admin_id = $1, activo = true WHERE id = $2',
                 [nuevoUsuario.id, colegioId]
             );
         }
@@ -205,15 +235,17 @@ router.post('/registro-con-codigo', async (req, res) => {
         );
 
         // Generar token
-        const token = require('jsonwebtoken').sign(
-            { id: nuevoUsuario.id, email: nuevoUsuario.email, rol: nuevoUsuario.rol, tipo: 'usuario' },
-            process.env.JWT_SECRET,
-            { expiresIn: '24h' }
-        );
+        const token = firmarTokenSesion({
+            id: nuevoUsuario.id,
+            email: nuevoUsuario.email,
+            rol: nuevoUsuario.rol,
+            tipo: 'usuario',
+        });
 
         res.status(201).json({
             mensaje: 'Usuario registrado y vinculado correctamente',
             token,
+            expiresIn: SESSION_EXPIRES_IN,
             usuario: nuevoUsuario
         });
 
@@ -306,7 +338,7 @@ router.post('/vincular-con-codigo', authenticateToken, async (req, res) => {
 
         if (rol === 'admin') {
             await client.query(
-                'UPDATE colegios SET admin_id = $1 WHERE id = $2',
+                'UPDATE colegios SET admin_id = $1, activo = true WHERE id = $2',
                 [usuario.id, colegioId]
             );
         }
@@ -331,15 +363,17 @@ router.post('/vincular-con-codigo', authenticateToken, async (req, res) => {
         await client.query('COMMIT');
 
         const usuarioFinal = usuarioActualizado.rows[0];
-        const token = require('jsonwebtoken').sign(
-            { id: usuarioFinal.id, email: usuarioFinal.email, rol: usuarioFinal.rol, tipo: 'usuario' },
-            process.env.JWT_SECRET,
-            { expiresIn: '24h' }
-        );
+        const token = firmarTokenSesion({
+            id: usuarioFinal.id,
+            email: usuarioFinal.email,
+            rol: usuarioFinal.rol,
+            tipo: 'usuario',
+        });
 
         res.json({
             mensaje: 'Cuenta vinculada correctamente',
             token,
+            expiresIn: SESSION_EXPIRES_IN,
             usuario: {
                 id: usuarioFinal.id,
                 nombre: usuarioFinal.nombre,
@@ -778,6 +812,11 @@ router.delete('/conductor/padres/:padreId', authenticateToken, requireRole('cond
 // GET /api/vinculaciones/verificar-codigo/:codigo
 router.get('/verificar-codigo/:codigo', async (req, res) => {
     const { codigo } = req.params;
+    const codigoNormalizado = normalizarCodigo(codigo);
+
+    if (!codigoNormalizado) {
+        return res.status(400).json({ error: 'El codigo es requerido' });
+    }
 
     try {
         const resultado = await pool.query(`
@@ -786,7 +825,7 @@ router.get('/verificar-codigo/:codigo', async (req, res) => {
       LEFT JOIN colegios co ON co.id = c.entidad_id AND c.tipo = 'colegio_admin'
       LEFT JOIN usuarios u ON u.id = c.creado_por
       WHERE c.codigo = $1 AND c.activo = true
-    `, [codigo.toUpperCase()]);
+    `, [codigoNormalizado]);
 
         if (resultado.rows.length === 0) {
             return res.status(404).json({ error: 'Código no encontrado o inactivo' });

@@ -70,14 +70,54 @@ const construirMensajeAlerta = async ({ colegioId, minutosRestantes }) => {
 
 router.post('/token', async (req, res) => {
     const { usuarioId, token, plataforma } = req.body;
+
+    if (!usuarioId || !token) {
+        return res.status(400).json({ error: 'usuarioId y token son requeridos' });
+    }
+
     try {
-        await pool.query(
-            `INSERT INTO tokens_push (usuario_id, token, plataforma)
-             VALUES ($1, $2, $3)
-             ON CONFLICT DO NOTHING`,
+        const actualizado = await pool.query(
+            `UPDATE tokens_push
+             SET usuario_id = $1, plataforma = $2, activo = true
+             WHERE token = $3
+             RETURNING id`,
             [usuarioId, token, plataforma]
         );
+
+        if (actualizado.rows.length === 0) {
+            await pool.query(
+                `INSERT INTO tokens_push (usuario_id, token, plataforma, activo)
+                 VALUES ($1, $2, $3, true)`,
+                [usuarioId, token, plataforma]
+            );
+        }
+
         res.json({ mensaje: 'Token registrado correctamente' });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+router.delete('/token', async (req, res) => {
+    const { usuarioId, token } = req.body;
+
+    if (!usuarioId || !token) {
+        return res.status(400).json({ error: 'usuarioId y token son requeridos' });
+    }
+
+    try {
+        const resultado = await pool.query(
+            `UPDATE tokens_push
+             SET activo = false
+             WHERE usuario_id = $1 AND token = $2
+             RETURNING id`,
+            [usuarioId, token]
+        );
+
+        res.json({
+            mensaje: 'Token desactivado correctamente',
+            desactivados: resultado.rows.length,
+        });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }

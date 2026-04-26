@@ -32,6 +32,48 @@ const validarDiasSemana = (diasSemana) =>
     Array.isArray(diasSemana) &&
     diasSemana.every((dia) => Number.isInteger(dia) && dia >= 0 && dia <= 6);
 
+const TOTAL_MENSAJES_DIARIOS = 31;
+
+const normalizarMensajesDiarios = (mensajes) => {
+    if (!Array.isArray(mensajes) || mensajes.length !== TOTAL_MENSAJES_DIARIOS) {
+        return null;
+    }
+
+    return mensajes.map((mensaje) => String(mensaje || '').trim());
+};
+
+const completarMensajesDiarios = (mensajes) => {
+    const valores = Array.isArray(mensajes) ? mensajes : [];
+    return Array.from({ length: TOTAL_MENSAJES_DIARIOS }, (_, index) => String(valores[index] || ''));
+};
+
+const parseJsonArray = (valor) => {
+    if (Array.isArray(valor)) return valor;
+
+    try {
+        const parsed = JSON.parse(valor || '[]');
+        return Array.isArray(parsed) ? parsed : [];
+    } catch (error) {
+        return [];
+    }
+};
+
+const obtenerMensajeParaDia = (mensajesDiarios, dia, mensajeFallback) => {
+    const mensajeDelDia = String(mensajesDiarios[dia - 1] || '').trim();
+    return mensajeDelDia || mensajeFallback;
+};
+
+const generarPasswordTemporal = (longitud = 10) => {
+    const caracteres = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789';
+    let password = '';
+
+    for (let i = 0; i < longitud; i += 1) {
+        password += caracteres.charAt(Math.floor(Math.random() * caracteres.length));
+    }
+
+    return password;
+};
+
 router.get('/dashboard', async (req, res) => {
     try {
         const [colegios, anuncios, superAdmins] = await Promise.all([
@@ -52,6 +94,89 @@ router.get('/dashboard', async (req, res) => {
 });
 
 router.get('/colegios', listarColegiosSuperAdmin);
+
+router.get('/colegios/:colegioId/usuarios', async (req, res) => {
+    const { colegioId } = req.params;
+
+    try {
+        const colegio = await pool.query(
+            `SELECT c.id, c.nombre, c.activo, c.admin_id, u.nombre AS admin_nombre, u.email AS admin_email
+             FROM colegios c
+             LEFT JOIN usuarios u ON u.id = c.admin_id
+             WHERE c.id = $1`,
+            [colegioId]
+        );
+
+        if (colegio.rows.length === 0) {
+            return res.status(404).json({ error: 'Colegio no encontrado' });
+        }
+
+        const usuarios = await pool.query(
+            `SELECT id, nombre, email, rol, telefono, dui, licencia, placa, activo, colegio_id, creado_en
+             FROM usuarios
+             WHERE colegio_id = $1
+             ORDER BY rol, nombre`,
+            [colegioId]
+        );
+
+        res.json({
+            colegio: colegio.rows[0],
+            usuarios: usuarios.rows,
+        });
+    } catch (error) {
+        console.error('Error listando usuarios del colegio:', error);
+        res.status(500).json({ error: 'Error interno del servidor' });
+    }
+});
+
+router.post('/colegios/:colegioId/reset-admin-password', async (req, res) => {
+    const { colegioId } = req.params;
+    const nuevaPassword = String(req.body?.password || '').trim() || generarPasswordTemporal();
+
+    if (nuevaPassword.length < 8) {
+        return res.status(400).json({ error: 'La contraseña debe tener al menos 8 caracteres' });
+    }
+
+    try {
+        const colegio = await pool.query(
+            `SELECT c.id, c.nombre, c.admin_id, u.nombre AS admin_nombre, u.email AS admin_email
+             FROM colegios c
+             LEFT JOIN usuarios u ON u.id = c.admin_id
+             WHERE c.id = $1`,
+            [colegioId]
+        );
+
+        if (colegio.rows.length === 0) {
+            return res.status(404).json({ error: 'Colegio no encontrado' });
+        }
+
+        const adminId = colegio.rows[0].admin_id;
+        if (!adminId) {
+            return res.status(400).json({ error: 'Este colegio no tiene administrador asignado' });
+        }
+
+        const passwordHash = await bcrypt.hash(nuevaPassword, 10);
+
+        await pool.query(
+            `UPDATE usuarios
+             SET password = $1, activo = true
+             WHERE id = $2 AND colegio_id = $3 AND rol = 'admin'`,
+            [passwordHash, adminId, colegioId]
+        );
+
+        res.json({
+            mensaje: 'Contraseña del administrador reiniciada correctamente',
+            colegio: colegio.rows[0],
+            credenciales: {
+                email: colegio.rows[0].admin_email,
+                passwordTemporal: nuevaPassword,
+            },
+        });
+    } catch (error) {
+        console.error('Error reseteando password del admin:', error);
+        res.status(500).json({ error: 'Error interno del servidor' });
+    }
+});
 
 router.get('/anuncios', async (req, res) => {
     const { colegioId } = req.query;
@@ -214,6 +339,58 @@ router.get('/alertas/recogida-5min', async (req, res) => {
     }
 });
 
+router.get('/mensajes-diarios', async (req, res) => {
+    try {
+        const resultado = await pool.query(
+            `SELECT mensajes_diarios
+             FROM alertas_configuracion
+             WHERE tipo = 'recogida_5min'
+             LIMIT 1`
+        );
+
+        const mensajes = completarMensajesDiarios(resultado.rows[0]?.mensajes_diarios);
+        res.json({ mensajes });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+router.put('/mensajes-diarios', async (req, res) => {
+    const mensajes = normalizarMensajesDiarios(req.body?.mensajes);
+
+    if (!mensajes) {
+        return res.status(400).json({ error: 'mensajes debe ser un array de 31 textos' });
+    }
+
+    try {
+        const resultado = await pool.query(
+            `INSERT INTO alertas_configuracion
+                (tipo, activo, modo, titulo, mensaje, mensajes_diarios, hora_recogida, hora_alerta, dias_semana, canal, actualizado_por, actualizado_en)
+             VALUES
+                ('recogida_5min', true, 'mensual', 'Recogida en 5 minutos', $1, $2::jsonb, '06:45', '06:40', '[1,2,3,4,5]'::jsonb, 'push', $3, NOW())
+             ON CONFLICT (tipo)
+             DO UPDATE SET
+                mensajes_diarios = EXCLUDED.mensajes_diarios,
+                actualizado_por = EXCLUDED.actualizado_por,
+                actualizado_en = NOW()
+             RETURNING *`,
+            [
+                'El transporte escolar llegara en 5 minutos al punto de recogida.',
+                JSON.stringify(mensajes),
+                req.user.email,
+            ]
+        );
+
+        res.json({
+            mensaje: 'Mensajes diarios actualizados',
+            mensajes: completarMensajesDiarios(resultado.rows[0].mensajes_diarios),
+            configuracion: resultado.rows[0],
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 router.put('/alertas/recogida-5min', async (req, res) => {
     const {
         activo = true,
@@ -304,6 +481,7 @@ router.post('/alertas/recogida-5min/generar-mes', async (req, res) => {
         const config = configResult.rows[0];
         const hora = parseHora(config.hora_alerta);
         const diasSemana = Array.isArray(config.dias_semana) ? config.dias_semana : JSON.parse(config.dias_semana || '[]');
+        const mensajesDiarios = parseJsonArray(config.mensajes_diarios);
 
         if (!hora) {
             return res.status(400).json({ error: 'La configuracion tiene una hora_alerta invalida' });
@@ -334,7 +512,7 @@ router.post('/alertas/recogida-5min/generar-mes', async (req, res) => {
                 [
                     config.id,
                     config.titulo,
-                    config.mensaje,
+                    obtenerMensajeParaDia(mensajesDiarios, dia, config.mensaje),
                     fecha,
                     config.canal,
                     config.activo,

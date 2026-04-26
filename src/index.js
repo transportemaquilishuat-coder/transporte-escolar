@@ -3,6 +3,7 @@ const cors = require('cors');
 const dotenv = require('dotenv');
 const http = require('http');
 const { Server } = require('socket.io');
+const db = require('./database');
 
 dotenv.config();
 
@@ -178,6 +179,14 @@ app.get('/api/admin/conductores-activos', (req, res) => {
         total: Object.values(conductoresActivos).length,
     });
 });
-server.listen(PORT, '0.0.0.0', () => {
-    console.log(`✅ Servidor corriendo en puerto ${PORT}`);
+
+(async () => {
+    await db.ready;
+
+    server.listen(PORT, '0.0.0.0', () => {
+        console.log(`✅ Servidor corriendo en puerto ${PORT}`);
+    });
+})().catch((err) => {
+    console.error('No se pudo iniciar el servidor:', err);
+    process.exit(1);
 });

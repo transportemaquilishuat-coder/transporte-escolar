@@ -31,9 +31,15 @@ const listarColegiosSuperAdmin = async (req, res) => {
                 c.logo_url,
                 c.plan,
                 c.activo,
+                CASE
+                    WHEN c.admin_id IS NOT NULL AND c.activo = true THEN 'activo'
+                    WHEN c.admin_id IS NULL THEN 'pendiente_vinculacion'
+                    ELSE 'inactivo'
+                END as estado_vinculacion,
                 c.dias_prueba_restantes,
                 c.creado_en,
                 c.admin_id,
+                (c.admin_id IS NOT NULL) as tiene_admin,
                 u.nombre as admin_nombre,
                 u.email as admin_email,
                 u.telefono as admin_telefono
@@ -61,8 +67,8 @@ const crearColegioSuperAdmin = async (req, res) => {
             nombre,
             logo_url = null,
             plan = 'trial',
-            activo = true,
             admin_id = null,
+            activo,
             diasPrueba,
             dias_prueba,
         } = req.body;
@@ -80,7 +86,7 @@ const crearColegioSuperAdmin = async (req, res) => {
             nombre,
             logo_url,
             plan,
-            activo: parseBoolean(activo, true),
+            activo: parseBoolean(activo, !!admin_id),
             dias_prueba_restantes: Number.isFinite(diasPruebaRestantes) ? diasPruebaRestantes : null,
             admin_id: admin_id || null,
         };
@@ -151,11 +157,29 @@ const generarCodigoAdminSuperAdmin = async (req, res) => {
         console.log('[CODIGO ADMIN] req.params:', req.params);
         console.log('[CODIGO ADMIN] req.body:', req.body);
 
-        const { colegioId } = req.params;
-        const { maxUsos = 1, diasValidez = 7 } = req.body;
+        const colegioId = Number(req.params.colegioId);
+        const maxUsos = Number(req.body?.maxUsos ?? 1);
+        const diasValidez = Number(req.body?.diasValidez ?? 7);
+        const creadoPor = Number(req.user?.id);
+
+        if (!Number.isInteger(colegioId) || colegioId <= 0) {
+            return res.status(400).json({ error: 'colegioId invalido' });
+        }
+
+        if (!Number.isInteger(maxUsos) || maxUsos <= 0) {
+            return res.status(400).json({ error: 'maxUsos debe ser un entero mayor que cero' });
+        }
+
+        if (!Number.isInteger(diasValidez) || diasValidez < 0) {
+            return res.status(400).json({ error: 'diasValidez debe ser un entero mayor o igual a cero' });
+        }
+
+        if (!Number.isInteger(creadoPor) || creadoPor <= 0) {
+            return res.status(401).json({ error: 'Usuario autenticado invalido' });
+        }
 
         const colegioEncontrado = await pool.query(
-            'SELECT * FROM colegios WHERE id = $1',
+            'SELECT id, nombre, admin_id FROM colegios WHERE id = $1',
             [colegioId]
         );
 
@@ -196,7 +220,7 @@ const generarCodigoAdminSuperAdmin = async (req, res) => {
             `INSERT INTO codigos_invitacion (codigo, tipo, entidad_id, creado_por, max_usos, expira_en)
              VALUES ($1, $2, $3, $4, $5, $6)
              RETURNING *`,
-            [codigo, 'colegio_admin', colegioId, req.user.id, maxUsos, expiraEn]
+            [codigo, 'colegio_admin', colegioId, creadoPor, maxUsos, expiraEn]
         );
 
         return res.status(201).json({
@@ -206,7 +230,15 @@ const generarCodigoAdminSuperAdmin = async (req, res) => {
             colegio: colegioEncontrado.rows[0].nombre,
         });
     } catch (error) {
-        console.error('Error generando codigo admin superadmin:', error);
+        console.error('Error generando codigo admin superadmin:', {
+            message: error.message,
+            code: error.code,
+            detail: error.detail,
+            hint: error.hint,
+            table: error.table,
+            column: error.column,
+            constraint: error.constraint,
+        });
         return res.status(500).json({ error: 'Error interno del servidor' });
     }
 };

@@ -142,6 +142,7 @@ const crearTablas = async () => {
         modo VARCHAR(20) NOT NULL DEFAULT 'mensual',
         titulo VARCHAR(150) NOT NULL,
         mensaje TEXT NOT NULL,
+        mensajes_diarios JSONB DEFAULT '[]'::jsonb,
         hora_recogida VARCHAR(5) NOT NULL,
         hora_alerta VARCHAR(5) NOT NULL,
         dias_semana JSONB DEFAULT '[]'::jsonb,
@@ -150,6 +151,9 @@ const crearTablas = async () => {
         creado_en TIMESTAMP DEFAULT NOW(),
         actualizado_en TIMESTAMP DEFAULT NOW()
       );
+
+      ALTER TABLE alertas_configuracion
+      ADD COLUMN IF NOT EXISTS mensajes_diarios JSONB DEFAULT '[]'::jsonb;
 
       CREATE TABLE IF NOT EXISTS alertas_programadas (
         id SERIAL PRIMARY KEY,

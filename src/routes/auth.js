@@ -2,8 +2,8 @@ require('dotenv').config();
 const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
 const pool = require('../database');
+const { SESSION_EXPIRES_IN, firmarTokenSesion } = require('../utils/authTokens');
 
 const ROLES_VALIDOS_USUARIO = ['padre', 'conductor', 'admin'];
 
@@ -30,14 +30,16 @@ router.post('/login', async (req, res) => {
             if (!passwordValida)
                 return res.status(401).json({ error: 'Credenciales incorrectas' });
 
-            const token = jwt.sign(
-                { id: usuario.id, email: usuario.email, rol: usuario.rol, tipo: 'usuario' },
-                process.env.JWT_SECRET,
-                { expiresIn: '24h' }
-            );
+            const token = firmarTokenSesion({
+                id: usuario.id,
+                email: usuario.email,
+                rol: usuario.rol,
+                tipo: 'usuario',
+            });
 
             return res.json({
                 token,
+                expiresIn: SESSION_EXPIRES_IN,
                 usuario: {
                     id: usuario.id,
                     nombre: usuario.nombre,
@@ -65,14 +67,16 @@ router.post('/login', async (req, res) => {
         if (!passwordValida)
             return res.status(401).json({ error: 'Credenciales incorrectas' });
 
-        const token = jwt.sign(
-            { id: superAdmin.id, email: superAdmin.email, rol: 'super_admin', tipo: 'super_admin' },
-            process.env.JWT_SECRET,
-            { expiresIn: '24h' }
-        );
+        const token = firmarTokenSesion({
+            id: superAdmin.id,
+            email: superAdmin.email,
+            rol: 'super_admin',
+            tipo: 'super_admin',
+        });
 
         res.json({
             token,
+            expiresIn: SESSION_EXPIRES_IN,
             usuario: {
                 id: superAdmin.id,
                 nombre: superAdmin.nombre,

@@ -38,6 +38,7 @@ Crear un archivo `.env` basado en `.env.example`:
 ```env
 PORT=3000
 JWT_SECRET=change_this_jwt_secret
+JWT_EXPIRES_IN=365d
 DATABASE_URL=postgresql://USER:PASSWORD@HOST:PORT/DB_NAME
 ```
 
@@ -113,6 +114,8 @@ Notas:
 - `POST /api/super-admin/usuarios`
 - `GET /api/super-admin/alertas/recogida-5min`
 - `PUT /api/super-admin/alertas/recogida-5min`
+- `GET /api/super-admin/mensajes-diarios`
+- `PUT /api/super-admin/mensajes-diarios`
 - `POST /api/super-admin/alertas/recogida-5min/generar-mes`
 - `GET /api/super-admin/alertas/recogida-5min/agenda`
 - `DELETE /api/super-admin/alertas/recogida-5min/agenda`
@@ -120,6 +123,7 @@ Notas:
 ### Notificaciones
 
 - `POST /api/notificaciones/token`
+- `DELETE /api/notificaciones/token`
 - `POST /api/notificaciones/enviar`
 - `POST /api/notificaciones/alerta-bus`
 

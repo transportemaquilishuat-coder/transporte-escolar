@@ -52,6 +52,48 @@ const asegurarEsquema = async () => {
     `);
 
     await pool.query(`
+        CREATE TABLE IF NOT EXISTS super_admins (
+            id SERIAL PRIMARY KEY,
+            nombre VARCHAR(100) NOT NULL,
+            email VARCHAR(100) UNIQUE NOT NULL,
+            password VARCHAR(255) NOT NULL,
+            creado_en TIMESTAMP DEFAULT NOW()
+        )
+    `);
+
+    await pool.query(`
+        CREATE TABLE IF NOT EXISTS codigos_invitacion (
+            id SERIAL PRIMARY KEY,
+            codigo VARCHAR(20) UNIQUE NOT NULL,
+            tipo VARCHAR(20) NOT NULL CHECK (tipo IN ('colegio_admin', 'colegio_conductor', 'conductor_padre')),
+            entidad_id INTEGER,
+            creado_por INTEGER NOT NULL,
+            usado_por INTEGER REFERENCES usuarios(id),
+            usado_en TIMESTAMP,
+            max_usos INTEGER DEFAULT 1,
+            usos_actuales INTEGER DEFAULT 0,
+            activo BOOLEAN DEFAULT true,
+            expira_en TIMESTAMP,
+            creado_en TIMESTAMP DEFAULT NOW()
+        )
+    `);
+
+    await pool.query(`
+        CREATE TABLE IF NOT EXISTS vinculaciones (
+            id SERIAL PRIMARY KEY,
+            tipo VARCHAR(30) NOT NULL CHECK (tipo IN ('colegio_admin', 'colegio_conductor', 'conductor_padre')),
+            entidad_id INTEGER NOT NULL,
+            vinculado_por INTEGER NOT NULL,
+            colegio_id INTEGER REFERENCES colegios(id),
+            conductor_id INTEGER REFERENCES usuarios(id),
+            codigo_usado VARCHAR(20),
+            estado VARCHAR(20) DEFAULT 'activo' CHECK (estado IN ('activo', 'pendiente', 'expirado', 'rechazado', 'inactivo')),
+            creado_en TIMESTAMP DEFAULT NOW(),
+            actualizado_en TIMESTAMP DEFAULT NOW()
+        )
+    `);
+
+    await pool.query(`
         ALTER TABLE rutas
         ADD COLUMN IF NOT EXISTS colegio_id INTEGER REFERENCES colegios(id)
     `);
@@ -79,6 +121,7 @@ const asegurarEsquema = async () => {
             modo VARCHAR(20) NOT NULL DEFAULT 'mensual',
             titulo VARCHAR(150) NOT NULL,
             mensaje TEXT NOT NULL,
+            mensajes_diarios JSONB DEFAULT '[]'::jsonb,
             hora_recogida VARCHAR(5) NOT NULL,
             hora_alerta VARCHAR(5) NOT NULL,
             dias_semana JSONB DEFAULT '[]'::jsonb,
@@ -87,6 +130,11 @@ const asegurarEsquema = async () => {
             creado_en TIMESTAMP DEFAULT NOW(),
             actualizado_en TIMESTAMP DEFAULT NOW()
         )
+    `);
+
+    await pool.query(`
+        ALTER TABLE alertas_configuracion
+        ADD COLUMN IF NOT EXISTS mensajes_diarios JSONB DEFAULT '[]'::jsonb
     `);
 
     await pool.query(`
@@ -120,11 +168,19 @@ const asegurarEsquema = async () => {
     `);
 };
 
-pool.connect()
-    .then(async () => {
+const ready = (async () => {
+    const client = await pool.connect();
+    try {
         console.log('PostgreSQL conectado');
         await asegurarEsquema();
-    })
-    .catch((err) => console.error('Error PostgreSQL:', err));
+    } finally {
+        client.release();
+    }
+})().catch((err) => {
+    console.error('Error PostgreSQL:', err);
+    throw err;
+});
+
+pool.ready = ready;
 
 module.exports = pool;

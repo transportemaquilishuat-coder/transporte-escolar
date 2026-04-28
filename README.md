@@ -15,6 +15,7 @@ Backend en Node.js + Express + PostgreSQL para transporte escolar.
 ```bash
 npm install
 npm run dev
+npm run reset:dev-users
 ```
 
 Servidor principal:
@@ -30,6 +31,23 @@ Ejecutar setup inicial:
 ```bash
 node src/database_setup.js
 ```
+
+## Perfiles de prueba
+
+Despues de ejecutar `npm run reset:dev-users`, quedan disponibles estos accesos:
+
+- `super_admin`: `superadmin.pruebas@transporte.local`
+- `admin`: `admin.pruebas@transporte.local`
+- `conductor`: `conductor.pruebas@transporte.local`
+- `padre`: `padre.pruebas@transporte.local`
+
+Password por defecto para los 4 perfiles:
+
+```text
+Pruebas2026!
+```
+
+Si necesitas otra clave comun, puedes definir `DEV_USERS_PASSWORD` antes de correr el script.
 
 ## Variables de entorno
 
@@ -60,6 +78,45 @@ src/
 
 - `POST /api/auth/login`
 - `POST /api/auth/registro`
+
+Registro publico sin codigo:
+
+```json
+{
+  "nombre": "Nombre Usuario",
+  "email": "usuario@test.com",
+  "password": "password123",
+  "rol": "padre"
+}
+```
+
+Roles publicos validos: `padre`, `conductor`, `admin`.
+
+El registro crea la cuenta y devuelve token. El usuario puede entrar a la app aunque todavia no este vinculado a colegio, conductor o ruta.
+
+### Vinculaciones
+
+Los codigos no son requisito para crear cuenta. Los codigos sirven para vincular una cuenta existente:
+
+- `colegio_admin`: cuenta `admin` -> colegio creado por super admin.
+- `colegio_conductor`: cuenta `conductor` -> colegio.
+- `conductor_padre`: cuenta `padre` -> conductor.
+
+Flujo recomendado:
+
+1. Crear cuenta con `POST /api/auth/registro`.
+2. Verificar codigo con `GET /api/vinculaciones/verificar-codigo/:codigo`.
+3. Vincular cuenta autenticada con `POST /api/vinculaciones/vincular-con-codigo`.
+
+Payload de vinculacion:
+
+```json
+{
+  "codigo": "ABC12345"
+}
+```
+
+Tambien existe `POST /api/vinculaciones/registro-con-codigo` para compatibilidad, pero la logica principal es registro libre + vinculacion posterior.
 
 ### Rutas
 

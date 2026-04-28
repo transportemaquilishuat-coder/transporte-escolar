@@ -3,20 +3,6 @@ const express = require('express');
 const router = express.Router();
 const pool = require('../database');
 
-const crearTablaTokens = async () => {
-    await pool.query(`
-    CREATE TABLE IF NOT EXISTS tokens_push (
-      id SERIAL PRIMARY KEY,
-      usuario_id INTEGER REFERENCES usuarios(id),
-      token VARCHAR(255) NOT NULL,
-      plataforma VARCHAR(10),
-      activo BOOLEAN DEFAULT true,
-      creado_en TIMESTAMP DEFAULT NOW()
-    );
-  `);
-};
-crearTablaTokens();
-
 const obtenerColegioPorRuta = async (rutaId) => {
     if (!rutaId) {
         return null;

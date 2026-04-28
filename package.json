@@ -5,7 +5,9 @@
   "main": "index.js",
   "scripts": {
     "start": "node src/index.js",
-    "dev": "nodemon src/index.js"
+    "dev": "nodemon src/index.js",
+    "reset:dev-users": "node scripts/reset-dev-users.js",
+    "test:dev-logins": "node scripts/test-dev-logins.js"
   },
   "keywords": [],
   "author": "",

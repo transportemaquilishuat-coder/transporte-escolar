@@ -34,20 +34,23 @@ const validarDiasSemana = (diasSemana) =>
 
 const TOTAL_MENSAJES_DIARIOS = 31;
 
-const normalizarMensajesDiarios = (mensajes) => {
-    if (!Array.isArray(mensajes) || mensajes.length !== TOTAL_MENSAJES_DIARIOS) {
+const normalizarMensajesDiarios = (mensajes, diasDelMes = 31) => {
+    const diasValidos = Math.min(diasDelMes, TOTAL_MENSAJES_DIARIOS);
+    if (!Array.isArray(mensajes) || mensajes.length < diasValidos) {
         return null;
     }
 
-    return mensajes.map((mensaje) => String(mensaje || '').trim());
+    return mensajes.slice(0, diasValidos).map((mensaje) => String(mensaje || '').trim());
 };
 
-const completarMensajesDiarios = (mensajes) => {
+const completarMensajesDiarios = (mensajes, diasDelMes = 31) => {
     const valores = Array.isArray(mensajes) ? mensajes : [];
-    return Array.from({ length: TOTAL_MENSAJES_DIARIOS }, (_, index) => String(valores[index] || ''));
+    const diasValidos = Math.min(diasDelMes, TOTAL_MENSAJES_DIARIOS);
+    return Array.from({ length: diasValidos }, (_, index) => String(valores[index] || ''));
 };
 
 const parseJsonArray = (valor) => {
+    if (!valor) return [];
     if (Array.isArray(valor)) return valor;
 
     try {
@@ -340,6 +343,11 @@ router.get('/alertas/recogida-5min', async (req, res) => {
 });
 
 router.get('/mensajes-diarios', async (req, res) => {
+    const hoy = new Date();
+    const mes = Number(req.query.mes || hoy.getMonth() + 1);
+    const anio = Number(req.query.anio || hoy.getFullYear());
+    const diasDelMes = new Date(anio, mes, 0).getDate();
+
     try {
         const resultado = await pool.query(
             `SELECT mensajes_diarios
@@ -348,18 +356,23 @@ router.get('/mensajes-diarios', async (req, res) => {
              LIMIT 1`
         );
 
-        const mensajes = completarMensajesDiarios(resultado.rows[0]?.mensajes_diarios);
-        res.json({ mensajes });
+        const mensajes = completarMensajesDiarios(resultado.rows[0]?.mensajes_diarios, diasDelMes);
+        res.json({ mensajes, diasDelMes });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }
 });
 
 router.put('/mensajes-diarios', async (req, res) => {
-    const mensajes = normalizarMensajesDiarios(req.body?.mensajes);
+    const hoy = new Date();
+    const mes = Number(req.body?.mes || hoy.getMonth() + 1);
+    const anio = Number(req.body?.anio || hoy.getFullYear());
+    const diasDelMes = new Date(anio, mes, 0).getDate();
+
+    const mensajes = normalizarMensajesDiarios(req.body?.mensajes, diasDelMes);
 
     if (!mensajes) {
-        return res.status(400).json({ error: 'mensajes debe ser un array de 31 textos' });
+        return res.status(400).json({ error: `mensajes debe ser un array de ${diasDelMes} textos` });
     }
 
     try {
@@ -383,7 +396,7 @@ router.put('/mensajes-diarios', async (req, res) => {
 
         res.json({
             mensaje: 'Mensajes diarios actualizados',
-            mensajes: completarMensajesDiarios(resultado.rows[0].mensajes_diarios),
+            mensajes: completarMensajesDiarios(resultado.rows[0].mensajes_diarios, diasDelMes),
             configuracion: resultado.rows[0],
         });
     } catch (error) {
@@ -480,7 +493,7 @@ router.post('/alertas/recogida-5min/generar-mes', async (req, res) => {
 
         const config = configResult.rows[0];
         const hora = parseHora(config.hora_alerta);
-        const diasSemana = Array.isArray(config.dias_semana) ? config.dias_semana : JSON.parse(config.dias_semana || '[]');
+        const diasSemana = parseJsonArray(config.dias_semana);
         const mensajesDiarios = parseJsonArray(config.mensajes_diarios);
 
         if (!hora) {

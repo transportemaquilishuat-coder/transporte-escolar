@@ -10,83 +10,103 @@ const ROLES_VALIDOS_USUARIO = ['padre', 'conductor', 'admin'];
 // POST /api/auth/login
 router.post('/login', async (req, res) => {
     const { email, password } = req.body;
+    const emailNormalizado = String(email || '').trim().toLowerCase();
 
-    if (!email || !password)
+    console.log(`[LOGIN] Intento para: ${emailNormalizado}`);
+
+    if (!emailNormalizado || !password) {
         return res.status(400).json({ error: 'Email y contraseña requeridos' });
+    }
 
     try {
-        const resultadoUsuarios = await pool.query(
-            `SELECT u.*, c.logo_url AS colegio_logo_url, c.nombre AS colegio_nombre
-             FROM usuarios u
-             LEFT JOIN colegios c ON c.id = u.colegio_id
-             WHERE u.email = $1 AND u.activo = true`,
-            [email.toLowerCase()]
+        // 1. Primero buscar en super_admins (menos filas, más privilegio)
+        const resultadoSuperAdmin = await pool.query(
+            'SELECT * FROM super_admins WHERE LOWER(email) = $1',
+            [emailNormalizado]
         );
 
-        if (resultadoUsuarios.rows.length > 0) {
-            const usuario = resultadoUsuarios.rows[0];
-            const passwordValida = await bcrypt.compare(password, usuario.password);
+        if (resultadoSuperAdmin.rows.length > 0) {
+            const superAdmin = resultadoSuperAdmin.rows[0];
+            const passwordValida = await bcrypt.compare(password, superAdmin.password);
 
-            if (!passwordValida)
+            if (!passwordValida) {
+                console.log(`[LOGIN] Superadmin ${emailNormalizado}: Password incorrecta`);
                 return res.status(401).json({ error: 'Credenciales incorrectas' });
+            }
 
+            console.log(`[LOGIN] Superadmin ${emailNormalizado}: Éxito`);
             const token = firmarTokenSesion({
-                id: usuario.id,
-                email: usuario.email,
-                rol: usuario.rol,
-                tipo: 'usuario',
+                id: superAdmin.id,
+                email: superAdmin.email,
+                rol: 'super_admin',
+                tipo: 'super_admin',
             });
 
             return res.json({
                 token,
                 expiresIn: SESSION_EXPIRES_IN,
                 usuario: {
-                    id: usuario.id,
-                    nombre: usuario.nombre,
-                    email: usuario.email,
-                    rol: usuario.rol,
-                    telefono: usuario.telefono,
-                    colegioId: usuario.colegio_id,
-                    colegioNombre: usuario.colegio_nombre || null,
-                    logoUrl: usuario.colegio_logo_url || null,
+                    id: superAdmin.id,
+                    nombre: superAdmin.nombre,
+                    email: superAdmin.email,
+                    rol: 'super_admin',
                 }
             });
         }
 
-        const resultadoSuperAdmin = await pool.query(
-            'SELECT * FROM super_admins WHERE email = $1',
-            [email.toLowerCase()]
+        // 2. Si no es superadmin, buscar en usuarios normales
+        const resultadoUsuarios = await pool.query(
+            `SELECT u.*, c.logo_url AS colegio_logo_url, c.nombre AS colegio_nombre
+             FROM usuarios u
+             LEFT JOIN colegios c ON c.id = u.colegio_id
+             WHERE LOWER(u.email) = $1`,
+            [emailNormalizado]
         );
 
-        if (resultadoSuperAdmin.rows.length === 0)
+        if (resultadoUsuarios.rows.length === 0) {
+            console.log(`[LOGIN] Usuario ${emailNormalizado}: No encontrado`);
             return res.status(401).json({ error: 'Credenciales incorrectas' });
+        }
 
-        const superAdmin = resultadoSuperAdmin.rows[0];
-        const passwordValida = await bcrypt.compare(password, superAdmin.password);
+        const usuario = resultadoUsuarios.rows[0];
 
-        if (!passwordValida)
+        // Verificar si está activo
+        if (usuario.activo === false) {
+            console.log(`[LOGIN] Usuario ${emailNormalizado}: Inactivo`);
+            return res.status(403).json({ error: 'Usuario inactivo. Contacte al administrador.' });
+        }
+
+        const passwordValida = await bcrypt.compare(password, usuario.password);
+        if (!passwordValida) {
+            console.log(`[LOGIN] Usuario ${emailNormalizado}: Password incorrecta`);
             return res.status(401).json({ error: 'Credenciales incorrectas' });
+        }
 
+        console.log(`[LOGIN] Usuario ${emailNormalizado} (${usuario.rol}): Éxito`);
         const token = firmarTokenSesion({
-            id: superAdmin.id,
-            email: superAdmin.email,
-            rol: 'super_admin',
-            tipo: 'super_admin',
+            id: usuario.id,
+            email: usuario.email,
+            rol: usuario.rol,
+            tipo: 'usuario',
         });
 
-        res.json({
+        return res.json({
             token,
             expiresIn: SESSION_EXPIRES_IN,
             usuario: {
-                id: superAdmin.id,
-                nombre: superAdmin.nombre,
-                email: superAdmin.email,
-                rol: 'super_admin',
+                id: usuario.id,
+                nombre: usuario.nombre,
+                email: usuario.email,
+                rol: usuario.rol,
+                telefono: usuario.telefono,
+                colegioId: usuario.colegio_id,
+                colegioNombre: usuario.colegio_nombre || null,
+                logoUrl: usuario.colegio_logo_url || null,
             }
         });
 
     } catch (error) {
-        console.error('Error login:', error);
+        console.error('[LOGIN] Error crítico:', error);
         res.status(500).json({ error: 'Error interno del servidor' });
     }
 });
@@ -94,8 +114,9 @@ router.post('/login', async (req, res) => {
 // POST /api/auth/registro
 router.post('/registro', async (req, res) => {
     const { nombre, email, password, rol, telefono, dui, licencia, placa } = req.body;
+    const emailNormalizado = String(email || '').trim().toLowerCase();
 
-    if (!nombre || !email || !password || !rol)
+    if (!nombre || !emailNormalizado || !password || !rol)
         return res.status(400).json({ error: 'Campos requeridos incompletos' });
 
     if (!ROLES_VALIDOS_USUARIO.includes(rol)) {
@@ -104,8 +125,10 @@ router.post('/registro', async (req, res) => {
 
     try {
         const existe = await pool.query(
-            'SELECT id FROM usuarios WHERE email = $1',
-            [email.toLowerCase()]
+            `SELECT email FROM usuarios WHERE email = $1
+             UNION
+             SELECT email FROM super_admins WHERE email = $1`,
+            [emailNormalizado]
         );
 
         if (existe.rows.length > 0)
@@ -115,13 +138,33 @@ router.post('/registro', async (req, res) => {
 
         const resultado = await pool.query(
             `INSERT INTO usuarios (nombre, email, password, rol, telefono, dui, licencia, placa)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id, nombre, email, rol`,
-            [nombre, email.toLowerCase(), passwordHash, rol, telefono, dui, licencia, placa]
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       RETURNING id, nombre, email, rol, telefono, colegio_id`,
+            [nombre, emailNormalizado, passwordHash, rol, telefono, dui, licencia, placa]
         );
+
+        const usuario = resultado.rows[0];
+        const token = firmarTokenSesion({
+            id: usuario.id,
+            email: usuario.email,
+            rol: usuario.rol,
+            tipo: 'usuario',
+        });
 
         res.json({
             mensaje: 'Usuario registrado correctamente',
-            usuario: resultado.rows[0]
+            token,
+            expiresIn: SESSION_EXPIRES_IN,
+            usuario: {
+                id: usuario.id,
+                nombre: usuario.nombre,
+                email: usuario.email,
+                rol: usuario.rol,
+                telefono: usuario.telefono,
+                colegioId: usuario.colegio_id,
+                colegioNombre: null,
+                logoUrl: null,
+            }
         });
 
     } catch (error) {

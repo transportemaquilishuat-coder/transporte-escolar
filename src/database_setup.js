@@ -216,7 +216,7 @@ const crearTablas = async () => {
 
     await pool.query(`
       INSERT INTO super_admins (nombre, email, password)
-      VALUES ('Daniel', 'superadmin@tuapp.com', '$2a$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi')
+      VALUES ('Paula Superadmin', 'superadmin.pruebas@transporte.local', '$2b$10$RfznvLvXhKnnZ.HwIRfetece9vvk0g8GJtSItvp6/wTLqM7yoPk8G')
       ON CONFLICT (email) DO NOTHING;
 
       INSERT INTO colegios (nombre, plan)

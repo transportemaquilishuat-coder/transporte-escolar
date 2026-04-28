@@ -48,6 +48,15 @@ const verificarCodigo = async (codigo, tipoRequerido) => {
 
 const TIPOS_CODIGO = ['colegio_admin', 'colegio_conductor', 'conductor_padre'];
 
+const generarCodigo = (longitud = 8) => {
+    const caracteres = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    let codigo = '';
+    for (let i = 0; i < longitud; i += 1) {
+        codigo += caracteres.charAt(Math.floor(Math.random() * caracteres.length));
+    }
+    return codigo;
+};
+
 const normalizarCodigo = (codigo) =>
     String(codigo || '')
         .trim()
@@ -104,6 +113,29 @@ const resolverDestinoVinculacion = async (client, codigoData) => {
         default:
             throw new Error('Tipo de codigo no valido');
     }
+};
+
+const tipoCodigoEsperadoPorRol = {
+    admin: 'colegio_admin',
+    conductor: 'colegio_conductor',
+    padre: 'conductor_padre',
+};
+
+const validarCodigoParaUsuario = (usuario, codigoData) => {
+    const tipoEsperado = tipoCodigoEsperadoPorRol[usuario.rol];
+
+    if (!tipoEsperado) {
+        return { valido: false, error: 'Rol de usuario no valido para vinculacion' };
+    }
+
+    if (codigoData.tipo !== tipoEsperado) {
+        return {
+            valido: false,
+            error: `Este codigo es para ${codigoData.tipo}, pero tu cuenta es ${usuario.rol}`,
+        };
+    }
+
+    return { valido: true };
 };
 
 // ============================================
@@ -173,18 +205,23 @@ router.get('/superadmin/codigos', authenticateToken, requireRole('super_admin'),
 router.post('/registro-con-codigo', async (req, res) => {
     const {
         nombre, email, password, telefono, dui,
-        licencia, placa, codigo
+        licencia, placa, codigo, rol
     } = req.body;
+    const emailNormalizado = String(email || '').trim().toLowerCase();
 
-    if (!nombre || !email || !password || !codigo) {
-        return res.status(400).json({ error: 'Nombre, email, contraseña y código son requeridos' });
+    if (!nombre || !emailNormalizado || !password || !codigo || !rol) {
+        return res.status(400).json({ error: 'Nombre, email, contrasena, rol y codigo son requeridos' });
+    }
+
+    if (!tipoCodigoEsperadoPorRol[rol]) {
+        return res.status(400).json({ error: 'Rol invalido para vinculacion' });
     }
 
     try {
         // Verificar que el email no exista
         const existeEmail = await pool.query(
             'SELECT id FROM usuarios WHERE email = $1 UNION SELECT id FROM super_admins WHERE email = $1',
-            [email.toLowerCase()]
+            [emailNormalizado]
         );
         if (existeEmail.rows.length > 0) {
             return res.status(400).json({ error: 'El correo ya está registrado' });
@@ -198,7 +235,12 @@ router.post('/registro-con-codigo', async (req, res) => {
         }
 
         const codigoData = verificacion.codigo;
-        const { rol, colegioId, conductorId } = await resolverDestinoVinculacion(pool, codigoData);
+        const validacionRol = validarCodigoParaUsuario({ rol }, codigoData);
+        if (!validacionRol.valido) {
+            return res.status(400).json({ error: validacionRol.error });
+        }
+
+        const { colegioId, conductorId } = await resolverDestinoVinculacion(pool, codigoData);
 
         const passwordHash = await bcrypt.hash(password, 10);
 
@@ -206,7 +248,7 @@ router.post('/registro-con-codigo', async (req, res) => {
         const resultado = await pool.query(
             `INSERT INTO usuarios (nombre, email, password, rol, telefono, dui, licencia, placa, colegio_id)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id, nombre, email, rol, colegio_id`,
-            [nombre, email.toLowerCase(), passwordHash, rol, telefono, dui, licencia, placa, colegioId]
+            [nombre, emailNormalizado, passwordHash, rol, telefono, dui, licencia, placa, colegioId]
         );
 
         const nuevoUsuario = resultado.rows[0];
@@ -289,6 +331,11 @@ router.post('/vincular-con-codigo', authenticateToken, async (req, res) => {
 
         const codigoData = verificacion.codigo;
         const { rol, colegioId, conductorId } = await resolverDestinoVinculacion(client, codigoData);
+        const validacionRol = validarCodigoParaUsuario(usuario, codigoData);
+        if (!validacionRol.valido) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ error: validacionRol.error });
+        }
 
         if (codigoData.tipo === 'colegio_admin') {
             const colegioResult = await client.query(
@@ -820,9 +867,14 @@ router.get('/verificar-codigo/:codigo', async (req, res) => {
 
     try {
         const resultado = await pool.query(`
-      SELECT c.*, co.nombre as colegio_nombre, u.nombre as creado_por_nombre
+      SELECT
+        c.*,
+        co.nombre as colegio_nombre,
+        conductor.nombre as conductor_nombre,
+        u.nombre as creado_por_nombre
       FROM codigos_invitacion c
-      LEFT JOIN colegios co ON co.id = c.entidad_id AND c.tipo = 'colegio_admin'
+      LEFT JOIN colegios co ON co.id = c.entidad_id AND c.tipo IN ('colegio_admin', 'colegio_conductor')
+      LEFT JOIN usuarios conductor ON conductor.id = c.entidad_id AND c.tipo = 'conductor_padre'
       LEFT JOIN usuarios u ON u.id = c.creado_por
       WHERE c.codigo = $1 AND c.activo = true
     `, [codigoNormalizado]);
@@ -847,6 +899,7 @@ router.get('/verificar-codigo/:codigo', async (req, res) => {
             valido: true,
             tipo: codigoData.tipo,
             colegio: codigoData.colegio_nombre,
+            conductor: codigoData.conductor_nombre,
             expira_en: codigoData.expira_en,
             usos_restantes: codigoData.max_usos - codigoData.usos_actuales
         });

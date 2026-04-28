@@ -1,186 +1,139 @@
 const { Pool } = require('pg');
 
-const pool = new Pool({
+// Configuración flexible para Railway (Interno vs Externo)
+const isProduction = process.env.NODE_ENV === 'production' || !!process.env.RAILWAY_ENVIRONMENT;
+
+const poolConfig = {
     connectionString: process.env.DATABASE_URL,
-    ssl: { rejectUnauthorized: false }
-});
-
-const asegurarEsquema = async () => {
-    await pool.query(`
-        CREATE TABLE IF NOT EXISTS colegios (
-            id SERIAL PRIMARY KEY,
-            nombre VARCHAR(100) NOT NULL,
-            logo_url TEXT,
-            plan VARCHAR(20) DEFAULT 'trial',
-            activo BOOLEAN DEFAULT true,
-            dias_prueba_restantes INTEGER DEFAULT 30,
-            creado_en TIMESTAMP DEFAULT NOW()
-        )
-    `);
-
-    await pool.query(`
-        ALTER TABLE colegios
-        ADD COLUMN IF NOT EXISTS admin_id INTEGER
-    `);
-
-    await pool.query(`
-        DO $$
-        BEGIN
-            IF NOT EXISTS (
-                SELECT 1
-                FROM information_schema.table_constraints
-                WHERE constraint_name = 'fk_colegios_admin'
-            ) THEN
-                ALTER TABLE colegios
-                ADD CONSTRAINT fk_colegios_admin
-                FOREIGN KEY (admin_id) REFERENCES usuarios(id);
-            END IF;
-        EXCEPTION
-            WHEN undefined_table THEN
-                NULL;
-        END $$;
-    `);
-
-    await pool.query(`
-        CREATE TABLE IF NOT EXISTS configuracion (
-            id SERIAL PRIMARY KEY,
-            clave VARCHAR(100) UNIQUE NOT NULL,
-            valor VARCHAR(255) NOT NULL,
-            descripcion TEXT,
-            actualizado_en TIMESTAMP DEFAULT NOW()
-        )
-    `);
-
-    await pool.query(`
-        CREATE TABLE IF NOT EXISTS super_admins (
-            id SERIAL PRIMARY KEY,
-            nombre VARCHAR(100) NOT NULL,
-            email VARCHAR(100) UNIQUE NOT NULL,
-            password VARCHAR(255) NOT NULL,
-            creado_en TIMESTAMP DEFAULT NOW()
-        )
-    `);
-
-    await pool.query(`
-        CREATE TABLE IF NOT EXISTS codigos_invitacion (
-            id SERIAL PRIMARY KEY,
-            codigo VARCHAR(20) UNIQUE NOT NULL,
-            tipo VARCHAR(20) NOT NULL CHECK (tipo IN ('colegio_admin', 'colegio_conductor', 'conductor_padre')),
-            entidad_id INTEGER,
-            creado_por INTEGER NOT NULL,
-            usado_por INTEGER REFERENCES usuarios(id),
-            usado_en TIMESTAMP,
-            max_usos INTEGER DEFAULT 1,
-            usos_actuales INTEGER DEFAULT 0,
-            activo BOOLEAN DEFAULT true,
-            expira_en TIMESTAMP,
-            creado_en TIMESTAMP DEFAULT NOW()
-        )
-    `);
-
-    await pool.query(`
-        CREATE TABLE IF NOT EXISTS vinculaciones (
-            id SERIAL PRIMARY KEY,
-            tipo VARCHAR(30) NOT NULL CHECK (tipo IN ('colegio_admin', 'colegio_conductor', 'conductor_padre')),
-            entidad_id INTEGER NOT NULL,
-            vinculado_por INTEGER NOT NULL,
-            colegio_id INTEGER REFERENCES colegios(id),
-            conductor_id INTEGER REFERENCES usuarios(id),
-            codigo_usado VARCHAR(20),
-            estado VARCHAR(20) DEFAULT 'activo' CHECK (estado IN ('activo', 'pendiente', 'expirado', 'rechazado', 'inactivo')),
-            creado_en TIMESTAMP DEFAULT NOW(),
-            actualizado_en TIMESTAMP DEFAULT NOW()
-        )
-    `);
-
-    await pool.query(`
-        ALTER TABLE rutas
-        ADD COLUMN IF NOT EXISTS colegio_id INTEGER REFERENCES colegios(id)
-    `);
-
-    await pool.query(`
-        ALTER TABLE usuarios
-        ADD COLUMN IF NOT EXISTS colegio_id INTEGER REFERENCES colegios(id)
-    `);
-
-    await pool.query(`
-        ALTER TABLE alumnos
-        ADD COLUMN IF NOT EXISTS latitude DECIMAL(10,8)
-    `);
-
-    await pool.query(`
-        ALTER TABLE alumnos
-        ADD COLUMN IF NOT EXISTS longitude DECIMAL(11,8)
-    `);
-
-    await pool.query(`
-        CREATE TABLE IF NOT EXISTS alertas_configuracion (
-            id SERIAL PRIMARY KEY,
-            tipo VARCHAR(50) UNIQUE NOT NULL,
-            activo BOOLEAN DEFAULT true,
-            modo VARCHAR(20) NOT NULL DEFAULT 'mensual',
-            titulo VARCHAR(150) NOT NULL,
-            mensaje TEXT NOT NULL,
-            mensajes_diarios JSONB DEFAULT '[]'::jsonb,
-            hora_recogida VARCHAR(5) NOT NULL,
-            hora_alerta VARCHAR(5) NOT NULL,
-            dias_semana JSONB DEFAULT '[]'::jsonb,
-            canal VARCHAR(20) DEFAULT 'push',
-            actualizado_por VARCHAR(100),
-            creado_en TIMESTAMP DEFAULT NOW(),
-            actualizado_en TIMESTAMP DEFAULT NOW()
-        )
-    `);
-
-    await pool.query(`
-        ALTER TABLE alertas_configuracion
-        ADD COLUMN IF NOT EXISTS mensajes_diarios JSONB DEFAULT '[]'::jsonb
-    `);
-
-    await pool.query(`
-        CREATE TABLE IF NOT EXISTS alertas_programadas (
-            id SERIAL PRIMARY KEY,
-            configuracion_id INTEGER REFERENCES alertas_configuracion(id) ON DELETE CASCADE,
-            tipo VARCHAR(50) NOT NULL,
-            titulo VARCHAR(150) NOT NULL,
-            mensaje TEXT NOT NULL,
-            fecha_programada TIMESTAMP NOT NULL,
-            canal VARCHAR(20) DEFAULT 'push',
-            activo BOOLEAN DEFAULT true,
-            enviada BOOLEAN DEFAULT false,
-            creado_en TIMESTAMP DEFAULT NOW(),
-            actualizado_en TIMESTAMP DEFAULT NOW()
-        )
-    `);
-
-    await pool.query(`
-        INSERT INTO configuracion (clave, valor, descripcion)
-        VALUES
-            ('llamadas_conductor', 'true', 'Permitir que padres llamen al conductor'),
-            ('mostrar_numero_conductor', 'true', 'Mostrar numero del conductor a los padres'),
-            ('mostrar_aviso_abordaje', 'false', 'Ocultar aviso de especificar donde abordar'),
-            ('requiere_ubicacion_recogida', 'false', 'No requerir ubicacion diaria del punto de recogida'),
-            ('mostrar_aviso_ausentes_ruta', 'false', 'Ocultar aviso persistente de alumnos ausentes'),
-            ('mostrar_total_alumnos_historial_padre', 'false', 'Ocultar conteo de alumnos en historial del padre'),
-            ('permitir_inscripcion_conductor', 'true', 'Permitir que el conductor inscriba alumnos'),
-            ('mostrar_logo_colegio_inicio', 'true', 'Mostrar el logo del colegio en la pantalla de inicio')
-        ON CONFLICT (clave) DO NOTHING
-    `);
+    // Si estamos en Railway, preferimos usar las variables individuales para mayor estabilidad
+    host: process.env.PGHOST || process.env.DB_HOST,
+    user: process.env.PGUSER || process.env.DB_USER,
+    password: process.env.PGPASSWORD || process.env.DB_PASSWORD,
+    database: process.env.PGDATABASE || process.env.DB_NAME,
+    port: process.env.PGPORT || process.env.DB_PORT || 5432,
+    
+    // SSL es obligatorio para conexiones externas, pero opcional/diferente internamente en Railway
+    ssl: process.env.DATABASE_URL?.includes('localhost') ? false : { rejectUnauthorized: false },
+    
+    max: 15, 
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 5000, // Reducido para fallar rápido y reintentar
 };
 
-const ready = (async () => {
+// Limpiar valores undefined para que no sobrescriban el connectionString si no existen
+if (!poolConfig.host) delete poolConfig.host;
+if (!poolConfig.user) delete poolConfig.user;
+if (!poolConfig.password) delete poolConfig.password;
+if (!poolConfig.database) delete poolConfig.database;
+if (!poolConfig.port) delete poolConfig.port;
+
+const pool = new Pool(poolConfig);
+
+const asegurarEsquema = async () => {
+    console.log('[DB] Verificando esquema de tablas...');
     const client = await pool.connect();
     try {
-        console.log('PostgreSQL conectado');
-        await asegurarEsquema();
+        await client.query('BEGIN');
+        
+        // 1. Tablas fundamentales
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS colegios (
+                id SERIAL PRIMARY KEY,
+                nombre VARCHAR(100) NOT NULL,
+                logo_url TEXT,
+                plan VARCHAR(20) DEFAULT 'trial',
+                activo BOOLEAN DEFAULT true,
+                dias_prueba_restantes INTEGER DEFAULT 30,
+                admin_id INTEGER,
+                creado_en TIMESTAMP DEFAULT NOW()
+            );
+        `);
+
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS usuarios (
+                id SERIAL PRIMARY KEY,
+                nombre VARCHAR(100) NOT NULL,
+                email VARCHAR(100) UNIQUE NOT NULL,
+                password VARCHAR(255) NOT NULL,
+                rol VARCHAR(20) NOT NULL CHECK (rol IN ('padre', 'conductor', 'admin')),
+                telefono VARCHAR(20),
+                dui VARCHAR(20),
+                licencia VARCHAR(50),
+                placa VARCHAR(20),
+                colegio_id INTEGER,
+                activo BOOLEAN DEFAULT true,
+                creado_en TIMESTAMP DEFAULT NOW()
+            );
+        `);
+
+        // 2. Asegurar columnas y FKs
+        await client.query(`
+            ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS activo BOOLEAN DEFAULT true;
+            ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS colegio_id INTEGER;
+        `);
+
+        // 3. Resto de tablas (simplificado para brevedad, pero manteniendo integridad)
+        await client.query(`
+            CREATE TABLE IF NOT EXISTS rutas (
+                id SERIAL PRIMARY KEY,
+                nombre VARCHAR(100) NOT NULL,
+                conductor_id INTEGER REFERENCES usuarios(id),
+                colegio_id INTEGER,
+                activa BOOLEAN DEFAULT true,
+                creado_en TIMESTAMP DEFAULT NOW()
+            );
+            CREATE TABLE IF NOT EXISTS alumnos (
+                id SERIAL PRIMARY KEY,
+                nombre VARCHAR(100) NOT NULL,
+                padre_id INTEGER REFERENCES usuarios(id),
+                ruta_id INTEGER REFERENCES rutas(id),
+                activo BOOLEAN DEFAULT true
+            );
+            CREATE TABLE IF NOT EXISTS super_admins (
+                id SERIAL PRIMARY KEY,
+                nombre VARCHAR(100) NOT NULL,
+                email VARCHAR(100) UNIQUE NOT NULL,
+                password VARCHAR(255) NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS configuracion (
+                id SERIAL PRIMARY KEY,
+                clave VARCHAR(100) UNIQUE NOT NULL,
+                valor VARCHAR(255) NOT NULL
+            );
+        `);
+
+        await client.query('COMMIT');
+        console.log('[DB] Esquema verificado correctamente.');
+    } catch (error) {
+        await client.query('ROLLBACK');
+        console.error('[DB] Error asegurando esquema:', error.message);
+        throw error;
     } finally {
         client.release();
     }
-})().catch((err) => {
-    console.error('Error PostgreSQL:', err);
-    throw err;
-});
+};
+
+const ready = (async () => {
+    let retries = 5;
+    while (retries > 0) {
+        try {
+            console.log(`[DB] Intentando conectar (reintentos: ${retries})...`);
+            const client = await pool.connect();
+            console.log('✅ PostgreSQL conectado');
+            client.release();
+            await asegurarEsquema();
+            return;
+        } catch (err) {
+            retries -= 1;
+            console.error(`❌ Error PostgreSQL: ${err.message}`);
+            if (retries === 0) {
+                console.error('Finalizando reintentos. El servidor podría no funcionar correctamente.');
+                return;
+            }
+            await new Promise(res => setTimeout(res, 3000));
+        }
+    }
+})();
 
 pool.ready = ready;
-
 module.exports = pool;

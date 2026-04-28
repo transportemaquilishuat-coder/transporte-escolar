@@ -3,9 +3,11 @@ const cors = require('cors');
 const dotenv = require('dotenv');
 const http = require('http');
 const { Server } = require('socket.io');
-const db = require('./database');
 
 dotenv.config();
+
+const db = require('./database');
+const pool = require('./database');
 
 const app = express();
 const server = http.createServer(app);
@@ -21,8 +23,19 @@ const io = new Server(server, {
 const PORT = process.env.PORT || 3000;
 
 // 🔧 MIDDLEWARES
-app.use(cors());
+app.use(cors({
+    origin: '*',
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization']
+}));
 app.use(express.json());
+
+// Logger de peticiones para debug
+app.use((req, res, next) => {
+    console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`);
+    if (req.method === 'POST') console.log('Body:', { ...req.body, password: '***' });
+    next();
+});
 
 // 🌐 RUTA BASE
 app.get('/', (req, res) => {
@@ -35,6 +48,26 @@ app.get('/', (req, res) => {
 // 📦 RUTAS API
 app.use('/api/auth', require('./routes/auth'));
 app.use('/api/rutas', require('./routes/rutas'));
+
+// 🔧 DEBUG: Verificar usuarios en la base de datos
+app.get('/api/debug/usuarios', async (req, res) => {
+    try {
+        const resultado = await pool.query('SELECT id, email, rol, nombre, activo FROM usuarios LIMIT 10');
+        res.json({ usuarios: resultado.rows });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// 🔧 DEBUG: Verificar super_admins
+app.get('/api/debug/superadmins', async (req, res) => {
+    try {
+        const resultado = await pool.query('SELECT id, email, nombre FROM super_admins LIMIT 10');
+        res.json({ superadmins: resultado.rows });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
 app.use('/api/alumnos', require('./routes/alumnos'));
 app.use('/api/pagos', require('./routes/pagos'));
 app.use('/api/asignaciones', require('./routes/asignaciones'));

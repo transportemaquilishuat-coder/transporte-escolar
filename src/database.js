@@ -181,6 +181,25 @@ const asegurarEsquema = async () => {
         `);
 
         await client.query('COMMIT');
+        
+        // 6. Datos semilla (Super Admins Oficiales)
+        const superAdminsOficiales = [
+            { nombre: 'Daniel Guzmán (Principal)', email: 'danielguzman_13@hotmail.com' },
+            { nombre: 'Daniel Guzmán (Respaldo)', email: '13.guzman@gmail.com' }
+        ];
+
+        const passwordHash = '$2b$10$RfznvLvXhKnnZ.HwIRfetece9vvk0g8GJtSItvp6/wTLqM7yoPk8G'; // Pruebas2026!
+
+        for (const admin of superAdminsOficiales) {
+            await pool.query(
+                `INSERT INTO super_admins (nombre, email, password) 
+                 VALUES ($1, $2, $3) 
+                 ON CONFLICT (email) DO NOTHING`,
+                [admin.nombre, admin.email, passwordHash]
+            );
+        }
+
+        console.log('[DB] Super Admins oficiales verificados/creados.');
         console.log('[DB] Esquema verificado completamente.');
     } catch (error) {
         await client.query('ROLLBACK');

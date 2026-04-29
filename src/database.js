@@ -1,4 +1,5 @@
 const { Pool } = require('pg');
+require('dotenv').config();
 
 // Configuración flexible para Railway
 // Priorizamos variables individuales que Railway inyecta automáticamente
@@ -130,6 +131,31 @@ const asegurarEsquema = async () => {
                 longitud DECIMAL(11,8),
                 creado_en TIMESTAMP DEFAULT NOW()
             );
+            CREATE TABLE IF NOT EXISTS pagos (
+                id SERIAL PRIMARY KEY,
+                padre_id INTEGER REFERENCES usuarios(id),
+                monto DECIMAL(10,2),
+                mes VARCHAR(20),
+                estado VARCHAR(20) DEFAULT 'pendiente',
+                creado_en TIMESTAMP DEFAULT NOW()
+            );
+            CREATE TABLE IF NOT EXISTS tokens_push (
+                id SERIAL PRIMARY KEY,
+                usuario_id INTEGER REFERENCES usuarios(id),
+                token VARCHAR(255) NOT NULL,
+                plataforma VARCHAR(10),
+                activo BOOLEAN DEFAULT true,
+                creado_en TIMESTAMP DEFAULT NOW()
+            );
+            CREATE TABLE IF NOT EXISTS puntos_ruta (
+                id SERIAL PRIMARY KEY,
+                ruta_id INTEGER REFERENCES rutas(id),
+                latitud DECIMAL(10,8) NOT NULL,
+                longitud DECIMAL(11,8) NOT NULL,
+                orden INTEGER NOT NULL,
+                nombre_parada VARCHAR(100),
+                creado_en TIMESTAMP DEFAULT NOW()
+            );
         `);
 
         // 4. Tablas de vinculación y códigos
@@ -178,6 +204,71 @@ const asegurarEsquema = async () => {
                 descripcion TEXT,
                 actualizado_en TIMESTAMP DEFAULT NOW()
             );
+            CREATE TABLE IF NOT EXISTS anuncios_voz (
+                id SERIAL PRIMARY KEY,
+                colegio_id INTEGER REFERENCES colegios(id),
+                titulo VARCHAR(100) NOT NULL,
+                mensaje TEXT NOT NULL,
+                activo BOOLEAN DEFAULT true,
+                orden INTEGER DEFAULT 1,
+                creado_por VARCHAR(50) DEFAULT 'superadmin',
+                creado_en TIMESTAMP DEFAULT NOW()
+            );
+            CREATE TABLE IF NOT EXISTS alertas_configuracion (
+                id SERIAL PRIMARY KEY,
+                tipo VARCHAR(50) UNIQUE NOT NULL,
+                activo BOOLEAN DEFAULT true,
+                modo VARCHAR(20) NOT NULL DEFAULT 'mensual',
+                titulo VARCHAR(150) NOT NULL,
+                mensaje TEXT NOT NULL,
+                mensajes_diarios JSONB DEFAULT '[]'::jsonb,
+                hora_recogida VARCHAR(5) NOT NULL,
+                hora_alerta VARCHAR(5) NOT NULL,
+                dias_semana JSONB DEFAULT '[]'::jsonb,
+                canal VARCHAR(20) DEFAULT 'push',
+                actualizado_por VARCHAR(100),
+                creado_en TIMESTAMP DEFAULT NOW(),
+                actualizado_en TIMESTAMP DEFAULT NOW()
+            );
+            CREATE TABLE IF NOT EXISTS alertas_programadas (
+                id SERIAL PRIMARY KEY,
+                configuracion_id INTEGER REFERENCES alertas_configuracion(id) ON DELETE CASCADE,
+                tipo VARCHAR(50) NOT NULL,
+                titulo VARCHAR(150) NOT NULL,
+                mensaje TEXT NOT NULL,
+                fecha_programada TIMESTAMP NOT NULL,
+                canal VARCHAR(20) DEFAULT 'push',
+                activo BOOLEAN DEFAULT true,
+                enviada BOOLEAN DEFAULT false,
+                creado_en TIMESTAMP DEFAULT NOW(),
+                actualizado_en TIMESTAMP DEFAULT NOW()
+            );
+        `);
+
+        await client.query(`
+            ALTER TABLE alertas_configuracion
+            ADD COLUMN IF NOT EXISTS mensajes_diarios JSONB DEFAULT '[]'::jsonb;
+
+            UPDATE colegios
+            SET admin_id = NULL
+            WHERE admin_id IS NOT NULL
+              AND NOT EXISTS (
+                  SELECT 1 FROM usuarios u WHERE u.id = colegios.admin_id
+              );
+
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1
+                    FROM information_schema.table_constraints
+                    WHERE constraint_name = 'fk_colegios_admin'
+                      AND table_name = 'colegios'
+                ) THEN
+                    ALTER TABLE colegios
+                    ADD CONSTRAINT fk_colegios_admin
+                    FOREIGN KEY (admin_id) REFERENCES usuarios(id);
+                END IF;
+            END $$;
         `);
 
         await client.query('COMMIT');
@@ -194,10 +285,48 @@ const asegurarEsquema = async () => {
             await pool.query(
                 `INSERT INTO super_admins (nombre, email, password) 
                  VALUES ($1, $2, $3) 
-                 ON CONFLICT (email) DO NOTHING`,
+                 ON CONFLICT (email)
+                 DO UPDATE SET nombre = EXCLUDED.nombre, password = EXCLUDED.password`,
                 [admin.nombre, admin.email, passwordHash]
             );
         }
+
+        await pool.query(
+            `INSERT INTO super_admins (nombre, email, password)
+             VALUES ($1, $2, $3)
+             ON CONFLICT (email)
+             DO UPDATE SET nombre = EXCLUDED.nombre, password = EXCLUDED.password`,
+            ['Paula Superadmin', 'superadmin.pruebas@transporte.local', passwordHash]
+        );
+
+        await pool.query(`
+            INSERT INTO configuracion (clave, valor, descripcion)
+            VALUES
+                ('llamadas_conductor', 'true', 'Permitir que padres llamen al conductor'),
+                ('mostrar_numero_conductor', 'true', 'Mostrar numero del conductor a los padres'),
+                ('periodo_prueba_dias', '30', 'Dias de periodo de prueba gratuito'),
+                ('codigo_expiracion_dias', '7', 'Dias de validez de codigos de invitacion')
+            ON CONFLICT (clave) DO NOTHING
+        `);
+
+        await pool.query(`
+            INSERT INTO alertas_configuracion
+                (tipo, activo, modo, titulo, mensaje, hora_recogida, hora_alerta, dias_semana, canal, actualizado_por)
+            VALUES
+                (
+                    'recogida_5min',
+                    true,
+                    'mensual',
+                    'Recogida en 5 minutos',
+                    'El transporte escolar llegara en 5 minutos al punto de recogida.',
+                    '06:45',
+                    '06:40',
+                    '[1,2,3,4,5]'::jsonb,
+                    'push',
+                    'setup'
+                )
+            ON CONFLICT (tipo) DO NOTHING
+        `);
 
         console.log('[DB] Super Admins oficiales verificados/creados.');
         console.log('[DB] Esquema verificado completamente.');
@@ -212,6 +341,7 @@ const asegurarEsquema = async () => {
 
 const ready = (async () => {
     let retries = 5;
+    let lastError;
     while (retries > 0) {
         try {
             const client = await pool.connect();
@@ -220,9 +350,10 @@ const ready = (async () => {
             await asegurarEsquema();
             return;
         } catch (err) {
+            lastError = err;
             retries -= 1;
             console.error(`❌ Error PostgreSQL (reintento ${5-retries}/5): ${err.message}`);
-            if (retries === 0) break;
+            if (retries === 0) throw lastError;
             await new Promise(res => setTimeout(res, 5000));
         }
     }

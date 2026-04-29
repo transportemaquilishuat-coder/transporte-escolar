@@ -4,7 +4,11 @@ const bcrypt = require('bcryptjs');
 const router = express.Router();
 const pool = require('../database');
 const { authenticateToken, requireRole } = require('../middleware/auth');
-const { listarColegiosSuperAdmin } = require('../controllers/colegiosSuperAdmin');
+const {
+    listarColegiosSuperAdmin,
+    crearColegioSuperAdmin,
+    generarCodigoAdminSuperAdmin,
+} = require('../controllers/colegiosSuperAdmin');
 
 router.use(authenticateToken, requireRole('super_admin'));
 
@@ -97,6 +101,8 @@ router.get('/dashboard', async (req, res) => {
 });
 
 router.get('/colegios', listarColegiosSuperAdmin);
+router.post('/colegios', crearColegioSuperAdmin);
+router.post('/colegios/:colegioId/codigo', generarCodigoAdminSuperAdmin);
 
 router.get('/colegios/:colegioId/usuarios', async (req, res) => {
     const { colegioId } = req.params;

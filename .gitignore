@@ -1,0 +1,5 @@
+.env
+node_modules/
+login-result.txt
+server-test*.log
+

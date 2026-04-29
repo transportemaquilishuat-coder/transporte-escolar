@@ -20,7 +20,8 @@ const io = new Server(server, {
     }
 });
 
-const PORT = process.env.PORT || 3000;
+const PORT = Number(process.env.PORT || 8080);
+const BASE_URL = (process.env.BASE_URL || `http://127.0.0.1:${PORT}`).replace(/\/$/, '');
 
 // 🔧 MIDDLEWARES
 app.use(cors({
@@ -42,6 +43,14 @@ app.get('/', (req, res) => {
     res.json({
         mensaje: '🚌 API Transporte Escolar funcionando',
         version: '2.0.0'
+    });
+});
+
+app.get('/health', (req, res) => {
+    res.json({
+        ok: true,
+        service: 'transporte-backend',
+        port: PORT,
     });
 });
 
@@ -135,7 +144,7 @@ io.on('connection', (socket) => {
         io.emit('bus:ubicacion', ubicacionBus);
         // Verificar desvío y notificar
         if (datos.conductorId && datos.rutaId) {
-            fetch(`http://localhost:${PORT}/api/desvios/verificar`, {
+            fetch(`${BASE_URL}/api/desvios/verificar`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -218,6 +227,7 @@ app.get('/api/admin/conductores-activos', (req, res) => {
 
     server.listen(PORT, '0.0.0.0', () => {
         console.log(`✅ Servidor corriendo en puerto ${PORT}`);
+        console.log(`🌐 BASE_URL configurada: ${BASE_URL}`);
     });
 })().catch((err) => {
     console.error('No se pudo iniciar el servidor:', err);

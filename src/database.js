@@ -1,26 +1,32 @@
 const { Pool } = require('pg');
 
-// Configuración flexible para Railway (Interno vs Externo)
-const isProduction = process.env.NODE_ENV === 'production' || !!process.env.RAILWAY_ENVIRONMENT;
-
+// Configuración flexible para Railway
+// Priorizamos variables individuales que Railway inyecta automáticamente
 const poolConfig = {
-    connectionString: process.env.DATABASE_URL,
-    // Si estamos en Railway, preferimos usar las variables individuales para mayor estabilidad
     host: process.env.PGHOST || process.env.DB_HOST,
     user: process.env.PGUSER || process.env.DB_USER,
     password: process.env.PGPASSWORD || process.env.DB_PASSWORD,
     database: process.env.PGDATABASE || process.env.DB_NAME,
     port: process.env.PGPORT || process.env.DB_PORT || 5432,
+    connectionString: process.env.DATABASE_URL,
     
-    // SSL es obligatorio para conexiones externas, pero opcional/diferente internamente en Railway
-    ssl: process.env.DATABASE_URL?.includes('localhost') ? false : { rejectUnauthorized: false },
+    // SSL: En Railway interno no suele ser necesario. En externo sí.
+    // Si hay PGHOST y no es localhost, probablemente es interno de Railway.
+    ssl: (process.env.PGHOST && !process.env.PGHOST.includes('localhost') && !process.env.PGHOST.includes('proxy.rlwy.net')) 
+        ? false 
+        : { rejectUnauthorized: false },
     
-    max: 15, 
+    max: 10,
     idleTimeoutMillis: 30000,
-    connectionTimeoutMillis: 5000, // Reducido para fallar rápido y reintentar
+    connectionTimeoutMillis: 10000,
 };
 
-// Limpiar valores undefined para que no sobrescriban el connectionString si no existen
+// Si estamos conectando localmente a una DB externa, forzamos SSL
+if (poolConfig.connectionString && poolConfig.connectionString.includes('proxy.rlwy.net')) {
+    poolConfig.ssl = { rejectUnauthorized: false };
+}
+
+// Limpiar valores vacíos
 if (!poolConfig.host) delete poolConfig.host;
 if (!poolConfig.user) delete poolConfig.user;
 if (!poolConfig.password) delete poolConfig.password;
@@ -30,12 +36,12 @@ if (!poolConfig.port) delete poolConfig.port;
 const pool = new Pool(poolConfig);
 
 const asegurarEsquema = async () => {
-    console.log('[DB] Verificando esquema de tablas...');
+    console.log('[DB] Verificando esquema...');
     const client = await pool.connect();
     try {
         await client.query('BEGIN');
         
-        // 1. Tablas fundamentales
+        // Tablas básicas
         await client.query(`
             CREATE TABLE IF NOT EXISTS colegios (
                 id SERIAL PRIMARY KEY,
@@ -47,40 +53,34 @@ const asegurarEsquema = async () => {
                 admin_id INTEGER,
                 creado_en TIMESTAMP DEFAULT NOW()
             );
-        `);
-
-        await client.query(`
             CREATE TABLE IF NOT EXISTS usuarios (
                 id SERIAL PRIMARY KEY,
                 nombre VARCHAR(100) NOT NULL,
                 email VARCHAR(100) UNIQUE NOT NULL,
                 password VARCHAR(255) NOT NULL,
                 rol VARCHAR(20) NOT NULL CHECK (rol IN ('padre', 'conductor', 'admin')),
-                telefono VARCHAR(20),
-                dui VARCHAR(20),
-                licencia VARCHAR(50),
-                placa VARCHAR(20),
                 colegio_id INTEGER,
                 activo BOOLEAN DEFAULT true,
                 creado_en TIMESTAMP DEFAULT NOW()
             );
         `);
 
-        // 2. Asegurar columnas y FKs
+        // Columnas necesarias
         await client.query(`
-            ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS activo BOOLEAN DEFAULT true;
-            ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS colegio_id INTEGER;
+            ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS telefono VARCHAR(20);
+            ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS dui VARCHAR(20);
+            ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS licencia VARCHAR(50);
+            ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS placa VARCHAR(20);
         `);
 
-        // 3. Resto de tablas (simplificado para brevedad, pero manteniendo integridad)
+        // Otras tablas esenciales
         await client.query(`
             CREATE TABLE IF NOT EXISTS rutas (
                 id SERIAL PRIMARY KEY,
                 nombre VARCHAR(100) NOT NULL,
                 conductor_id INTEGER REFERENCES usuarios(id),
                 colegio_id INTEGER,
-                activa BOOLEAN DEFAULT true,
-                creado_en TIMESTAMP DEFAULT NOW()
+                activa BOOLEAN DEFAULT true
             );
             CREATE TABLE IF NOT EXISTS alumnos (
                 id SERIAL PRIMARY KEY,
@@ -95,18 +95,13 @@ const asegurarEsquema = async () => {
                 email VARCHAR(100) UNIQUE NOT NULL,
                 password VARCHAR(255) NOT NULL
             );
-            CREATE TABLE IF NOT EXISTS configuracion (
-                id SERIAL PRIMARY KEY,
-                clave VARCHAR(100) UNIQUE NOT NULL,
-                valor VARCHAR(255) NOT NULL
-            );
         `);
 
         await client.query('COMMIT');
-        console.log('[DB] Esquema verificado correctamente.');
+        console.log('[DB] Esquema verificado.');
     } catch (error) {
         await client.query('ROLLBACK');
-        console.error('[DB] Error asegurando esquema:', error.message);
+        console.error('[DB] Error en esquema:', error.message);
         throw error;
     } finally {
         client.release();
@@ -117,7 +112,6 @@ const ready = (async () => {
     let retries = 5;
     while (retries > 0) {
         try {
-            console.log(`[DB] Intentando conectar (reintentos: ${retries})...`);
             const client = await pool.connect();
             console.log('✅ PostgreSQL conectado');
             client.release();
@@ -125,12 +119,9 @@ const ready = (async () => {
             return;
         } catch (err) {
             retries -= 1;
-            console.error(`❌ Error PostgreSQL: ${err.message}`);
-            if (retries === 0) {
-                console.error('Finalizando reintentos. El servidor podría no funcionar correctamente.');
-                return;
-            }
-            await new Promise(res => setTimeout(res, 3000));
+            console.error(`❌ Error PostgreSQL (reintento ${5-retries}/5): ${err.message}`);
+            if (retries === 0) break;
+            await new Promise(res => setTimeout(res, 5000));
         }
     }
 })();

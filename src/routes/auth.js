@@ -20,12 +20,14 @@ router.post('/login', async (req, res) => {
 
     try {
         // 1. Primero buscar en super_admins (menos filas, más privilegio)
+        console.log(`[LOGIN] Buscando en super_admins: ${emailNormalizado}`);
         const resultadoSuperAdmin = await pool.query(
             'SELECT * FROM super_admins WHERE LOWER(email) = $1',
             [emailNormalizado]
         );
 
         if (resultadoSuperAdmin.rows.length > 0) {
+            console.log(`[LOGIN] Superadmin encontrado: ${emailNormalizado}. Verificando password...`);
             const superAdmin = resultadoSuperAdmin.rows[0];
             const passwordValida = await bcrypt.compare(password, superAdmin.password);
 
@@ -34,7 +36,7 @@ router.post('/login', async (req, res) => {
                 return res.status(401).json({ error: 'Credenciales incorrectas' });
             }
 
-            console.log(`[LOGIN] Superadmin ${emailNormalizado}: Éxito`);
+            console.log(`[LOGIN] Superadmin ${emailNormalizado}: Éxito total`);
             const token = firmarTokenSesion({
                 id: superAdmin.id,
                 email: superAdmin.email,

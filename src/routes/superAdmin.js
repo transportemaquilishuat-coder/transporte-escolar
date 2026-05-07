@@ -145,7 +145,7 @@ router.post('/colegios/:colegioId/impersonate', async (req, res) => {
         // Construir el payload del token. 
         // Si hay un admin real, usamos sus datos, si no, generamos un acceso administrativo "fantasma"
         const payload = {
-            id: colegio.admin_user_id || `sa_${req.user.id}_c${colegio.id}`,
+            id: colegio.admin_user_id || req.user.id,
             email: colegio.admin_email || `superadmin+${colegio.id}@transporte.local`,
             nombre: `[SA] ${colegio.admin_nombre || 'Admin Temporal'}`,
             rol: 'admin', // IMPORTANTE: El rol debe ser 'admin' para que el frontend y los controladores lo acepten

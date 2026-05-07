@@ -82,6 +82,81 @@ const obtenerCodigoValido = async (codigo) => {
     return { valido: false, error: 'Codigo no encontrado, expirado o invalido' };
 };
 
+const generarCodigoUnico = async (longitud = 8) => {
+    let codigo;
+    let existe = true;
+    let intentos = 0;
+
+    do {
+        codigo = generarCodigo(longitud);
+        const check = await pool.query('SELECT id FROM codigos_invitacion WHERE codigo = $1', [codigo]);
+        existe = check.rows.length > 0;
+        intentos += 1;
+    } while (existe && intentos < 10);
+
+    if (existe) {
+        throw new Error('No se pudo generar un codigo unico');
+    }
+
+    return codigo;
+};
+
+const obtenerColegioAdmin = async (client, adminId, tokenColegioId = null) => {
+    if (tokenColegioId) return tokenColegioId;
+
+    const admin = await client.query(
+        'SELECT colegio_id FROM usuarios WHERE id = $1',
+        [adminId]
+    );
+
+    return admin.rows[0]?.colegio_id || null;
+};
+
+const propagarColegioAConductorYPadres = async (client, conductorId, colegioId) => {
+    if (!conductorId || !colegioId) return [];
+
+    await client.query(
+        'UPDATE usuarios SET colegio_id = $1, rol = $2, activo = true WHERE id = $3',
+        [colegioId, 'conductor', conductorId]
+    );
+
+    await client.query(
+        'UPDATE rutas SET colegio_id = $1 WHERE conductor_id = $2',
+        [colegioId, conductorId]
+    );
+
+    const padresResult = await client.query(
+        `SELECT DISTINCT entidad_id
+         FROM vinculaciones
+         WHERE conductor_id = $1
+           AND tipo = 'conductor_padre'
+           AND estado = 'activo'`,
+        [conductorId]
+    );
+
+    const padresIds = padresResult.rows
+        .map((row) => Number(row.entidad_id))
+        .filter(Number.isInteger);
+
+    if (padresIds.length > 0) {
+        await client.query(
+            'UPDATE usuarios SET colegio_id = $1, rol = $2, activo = true WHERE id = ANY($3::int[])',
+            [colegioId, 'padre', padresIds]
+        );
+    }
+
+    await client.query(
+        `UPDATE vinculaciones
+         SET colegio_id = $1, actualizado_en = NOW()
+         WHERE conductor_id = $2
+           AND tipo = 'conductor_padre'
+           AND estado = 'activo'`,
+        [colegioId, conductorId]
+    );
+
+    return padresIds;
+};
+
 const resolverDestinoVinculacion = async (client, codigoData) => {
     switch (codigoData.tipo) {
         case 'colegio_admin':
@@ -97,16 +172,21 @@ const resolverDestinoVinculacion = async (client, codigoData) => {
                 conductorId: null
             };
         case 'conductor_padre': {
+            const conductor = await client.query(
+                'SELECT colegio_id FROM usuarios WHERE id = $1 AND rol = $2 LIMIT 1',
+                [codigoData.entidad_id, 'conductor']
+            );
+
             const rutaCond = await client.query(
-                'SELECT colegio_id FROM rutas WHERE conductor_id = $1 LIMIT 1',
+                'SELECT colegio_id FROM rutas WHERE conductor_id = $1 AND colegio_id IS NOT NULL LIMIT 1',
                 [codigoData.entidad_id]
             );
 
-            // Si el conductor no tiene ruta o colegio asignado aun, devolvemos null en colegioId
+            // Si el conductor no tiene ruta o colegio asignado aun, devolvemos null en colegioId.
             // Esto permite la vinculacion directa conductor-padre sin dependencia de colegio inmediata
             return {
                 rol: 'padre',
-                colegioId: rutaCond.rows[0]?.colegio_id || null,
+                colegioId: conductor.rows[0]?.colegio_id || rutaCond.rows[0]?.colegio_id || null,
                 conductorId: codigoData.entidad_id
             };
         }
@@ -691,6 +771,12 @@ router.post('/admin/conductores/directo', authenticateToken, requireRole('admin'
                 'UPDATE usuarios SET colegio_id = $1, rol = $2 WHERE id = $3',
                 [colegioId, 'conductor', existe.rows[0].id]
             );
+            const clientPropagacion = await pool.connect();
+            try {
+                await propagarColegioAConductorYPadres(clientPropagacion, existe.rows[0].id, colegioId);
+            } finally {
+                clientPropagacion.release();
+            }
 
             // Registrar vinculación
             await pool.query(
@@ -776,6 +862,154 @@ router.delete('/admin/conductores/:conductorId', authenticateToken, requireRole(
     }
 });
 
+// GET /api/vinculaciones/admin/padres
+// Lista padres del colegio, incluyendo los vinculados por conductores del colegio.
+router.get('/admin/padres', authenticateToken, requireRole('admin'), async (req, res) => {
+    try {
+        const colegioId = await obtenerColegioAdmin(pool, req.user.id, req.user.colegio_id);
+
+        if (!colegioId) {
+            return res.status(400).json({ error: 'No tienes un colegio asignado' });
+        }
+
+        const resultado = await pool.query(`
+            SELECT DISTINCT
+                u.id,
+                u.nombre,
+                u.email,
+                u.telefono,
+                u.dui,
+                u.activo,
+                u.colegio_id,
+                u.fecha_inicio_servicio,
+                u.fecha_fin_servicio,
+                v.conductor_id,
+                cnd.nombre AS conductor_nombre,
+                v.creado_en AS vinculado_en
+            FROM usuarios u
+            LEFT JOIN vinculaciones v
+                ON v.entidad_id = u.id
+               AND v.tipo = 'conductor_padre'
+               AND v.estado = 'activo'
+            LEFT JOIN usuarios cnd ON cnd.id = v.conductor_id
+            WHERE u.rol = 'padre'
+              AND u.activo = true
+              AND (u.colegio_id = $1 OR v.colegio_id = $1)
+            ORDER BY u.nombre
+        `, [colegioId]);
+
+        res.json({ padres: resultado.rows });
+    } catch (error) {
+        console.error('Error listando padres del colegio:', error);
+        res.status(500).json({ error: 'Error interno del servidor' });
+    }
+});
+
+// POST /api/vinculaciones/admin/padres/directo
+// Admin vincula o crea un padre del colegio sin depender de ruta.
+router.post('/admin/padres/directo', authenticateToken, requireRole('admin'), async (req, res) => {
+    const { email, nombre, telefono, dui, password, fechaInicio, fechaFin } = req.body;
+
+    if (!email || !nombre || !password) {
+        return res.status(400).json({ error: 'Email, nombre y contrasena son requeridos' });
+    }
+
+    const client = await pool.connect();
+
+    try {
+        await client.query('BEGIN');
+
+        const colegioId = await obtenerColegioAdmin(client, req.user.id, req.user.colegio_id);
+        if (!colegioId) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ error: 'No tienes un colegio asignado' });
+        }
+
+        const emailNormalizado = String(email).trim().toLowerCase();
+        const existe = await client.query('SELECT * FROM usuarios WHERE LOWER(email) = $1', [emailNormalizado]);
+
+        let padre;
+        if (existe.rows.length > 0) {
+            padre = existe.rows[0];
+            if (padre.colegio_id && Number(padre.colegio_id) !== Number(colegioId)) {
+                await client.query('ROLLBACK');
+                return res.status(400).json({ error: 'Este padre ya esta vinculado a otro colegio' });
+            }
+
+            const actualizado = await client.query(
+                `UPDATE usuarios
+                 SET colegio_id = $1,
+                     rol = 'padre',
+                     activo = true,
+                     fecha_inicio_servicio = COALESCE($2, fecha_inicio_servicio),
+                     fecha_fin_servicio = COALESCE($3, fecha_fin_servicio)
+                 WHERE id = $4
+                 RETURNING id, nombre, email, rol, telefono, colegio_id`,
+                [colegioId, fechaInicio || null, fechaFin || null, padre.id]
+            );
+            padre = actualizado.rows[0];
+        } else {
+            const passwordHash = await bcrypt.hash(password, 10);
+            const creado = await client.query(
+                `INSERT INTO usuarios (nombre, email, password, rol, telefono, dui, colegio_id, fecha_inicio_servicio, fecha_fin_servicio, activo)
+                 VALUES ($1, $2, $3, 'padre', $4, $5, $6, $7, $8, true)
+                 RETURNING id, nombre, email, rol, telefono, colegio_id`,
+                [nombre, emailNormalizado, passwordHash, telefono, dui, colegioId, fechaInicio || null, fechaFin || null]
+            );
+            padre = creado.rows[0];
+        }
+
+        await client.query('COMMIT');
+        res.status(201).json({ mensaje: 'Padre vinculado al colegio correctamente', padre });
+    } catch (error) {
+        await client.query('ROLLBACK');
+        console.error('Error vinculando padre del colegio:', error);
+        res.status(500).json({ error: 'Error interno del servidor' });
+    } finally {
+        client.release();
+    }
+});
+
+// DELETE /api/vinculaciones/admin/padres/:padreId
+// Admin desvincula un padre del colegio y de conductores de ese colegio.
+router.delete('/admin/padres/:padreId', authenticateToken, requireRole('admin'), async (req, res) => {
+    const padreId = Number(req.params.padreId);
+    const client = await pool.connect();
+
+    try {
+        await client.query('BEGIN');
+
+        const colegioId = await obtenerColegioAdmin(client, req.user.id, req.user.colegio_id);
+        if (!colegioId) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ error: 'No tienes un colegio asignado' });
+        }
+
+        await client.query(
+            `UPDATE vinculaciones
+             SET estado = 'inactivo', actualizado_en = NOW()
+             WHERE entidad_id = $1
+               AND tipo = 'conductor_padre'
+               AND colegio_id = $2`,
+            [padreId, colegioId]
+        );
+
+        await client.query(
+            'UPDATE usuarios SET colegio_id = NULL WHERE id = $1 AND colegio_id = $2 AND rol = $3',
+            [padreId, colegioId, 'padre']
+        );
+
+        await client.query('COMMIT');
+        res.json({ mensaje: 'Padre desvinculado del colegio correctamente' });
+    } catch (error) {
+        await client.query('ROLLBACK');
+        console.error('Error desvinculando padre del colegio:', error);
+        res.status(500).json({ error: 'Error interno del servidor' });
+    } finally {
+        client.release();
+    }
+});
+
 // ============================================
 // 4. CONDUCTOR: Gestionar Padres
 // ============================================
@@ -851,11 +1085,109 @@ router.post('/conductor/padres/codigo', authenticateToken, requireRole('conducto
 });
 
 // POST /api/vinculaciones/conductor/padres/directo
+// Flujo independiente: el conductor puede vincular padres aun sin colegio ni ruta.
+router.post('/conductor/padres/directo', authenticateToken, requireRole('conductor'), async (req, res) => {
+    const { email, nombre, telefono, dui, password, rutaId, fechaInicio, fechaFin } = req.body;
+
+    if (!email || !nombre || !password) {
+        return res.status(400).json({ error: 'Email, nombre y contrasena son requeridos' });
+    }
+
+    const client = await pool.connect();
+
+    try {
+        await client.query('BEGIN');
+
+        let colegioId = null;
+        if (rutaId) {
+            const ruta = await client.query(
+                'SELECT colegio_id FROM rutas WHERE id = $1 AND conductor_id = $2',
+                [rutaId, req.user.id]
+            );
+
+            if (ruta.rows.length === 0) {
+                await client.query('ROLLBACK');
+                return res.status(404).json({ error: 'Ruta no encontrada o no te pertenece' });
+            }
+
+            colegioId = ruta.rows[0].colegio_id || null;
+        } else {
+            const conductor = await client.query(
+                'SELECT colegio_id FROM usuarios WHERE id = $1',
+                [req.user.id]
+            );
+            colegioId = conductor.rows[0]?.colegio_id || null;
+        }
+
+        const existe = await client.query(
+            'SELECT * FROM usuarios WHERE LOWER(email) = $1',
+            [String(email).trim().toLowerCase()]
+        );
+
+        let padre;
+        if (existe.rows.length > 0) {
+            padre = existe.rows[0];
+
+            if (
+                padre.colegio_id &&
+                colegioId &&
+                Number(padre.colegio_id) !== Number(colegioId)
+            ) {
+                await client.query('ROLLBACK');
+                return res.status(400).json({ error: 'Este padre ya esta vinculado a otro colegio' });
+            }
+
+            const actualizado = await client.query(
+                `UPDATE usuarios
+                 SET colegio_id = COALESCE($1, colegio_id),
+                     rol = 'padre',
+                     activo = true,
+                     fecha_inicio_servicio = COALESCE($2, fecha_inicio_servicio),
+                     fecha_fin_servicio = COALESCE($3, fecha_fin_servicio)
+                 WHERE id = $4
+                 RETURNING id, nombre, email, rol, telefono, colegio_id`,
+                [colegioId, fechaInicio || null, fechaFin || null, padre.id]
+            );
+            padre = actualizado.rows[0];
+        } else {
+            const passwordHash = await bcrypt.hash(password, 10);
+            const creado = await client.query(
+                `INSERT INTO usuarios (nombre, email, password, rol, telefono, dui, colegio_id, fecha_inicio_servicio, fecha_fin_servicio, activo)
+                 VALUES ($1, $2, $3, 'padre', $4, $5, $6, $7, $8, true)
+                 RETURNING id, nombre, email, rol, telefono, colegio_id`,
+                [nombre, String(email).trim().toLowerCase(), passwordHash, telefono, dui, colegioId, fechaInicio || null, fechaFin || null]
+            );
+            padre = creado.rows[0];
+        }
+
+        await client.query(
+            `INSERT INTO vinculaciones (tipo, entidad_id, vinculado_por, colegio_id, conductor_id, estado)
+             VALUES ('conductor_padre', $1, $2, $3, $2, 'activo')
+             ON CONFLICT DO NOTHING`,
+            [padre.id, req.user.id, colegioId]
+        );
+
+        await client.query('COMMIT');
+
+        return res.status(201).json({
+            mensaje: 'Padre vinculado correctamente',
+            padre
+        });
+    } catch (error) {
+        await client.query('ROLLBACK');
+        console.error('Error en vinculacion directa de padre:', error);
+        return res.status(500).json({ error: 'Error interno del servidor' });
+    } finally {
+        client.release();
+    }
+});
+
+// POST /api/vinculaciones/conductor/padres/directo
 // Conductor asigna un padre existente directamente
 router.post('/conductor/padres/directo', authenticateToken, requireRole('conductor'), async (req, res) => {
     const { email, nombre, telefono, dui, password, rutaId, fechaInicio, fechaFin } = req.body;
 
-    if (!email || !nombre || !password || !rutaId) {
+    if (!email || !nombre || !password) {
         return res.status(400).json({ error: 'Email, nombre, contraseña y ruta son requeridos' });
     }
 

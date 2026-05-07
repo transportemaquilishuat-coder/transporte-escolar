@@ -17,6 +17,8 @@ const crearTablas = async () => {
         activo BOOLEAN DEFAULT true,
         dias_prueba_restantes INTEGER DEFAULT 30,
         admin_id INTEGER,
+        latitude DECIMAL(10,8),
+        longitude DECIMAL(11,8),
         creado_en TIMESTAMP DEFAULT NOW()
       );
 
@@ -172,12 +174,20 @@ const crearTablas = async () => {
       CREATE TABLE IF NOT EXISTS puntos_ruta (
         id SERIAL PRIMARY KEY,
         ruta_id INTEGER REFERENCES rutas(id),
+        alumno_id INTEGER REFERENCES alumnos(id),
+        tipo VARCHAR(20) DEFAULT 'recogida',
         latitud DECIMAL(10,8) NOT NULL,
         longitud DECIMAL(11,8) NOT NULL,
         orden INTEGER NOT NULL,
         nombre_parada VARCHAR(100),
         creado_en TIMESTAMP DEFAULT NOW()
       );
+
+      ALTER TABLE puntos_ruta ADD COLUMN IF NOT EXISTS alumno_id INTEGER REFERENCES alumnos(id);
+      ALTER TABLE puntos_ruta ADD COLUMN IF NOT EXISTS tipo VARCHAR(20) DEFAULT 'recogida';
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_puntos_ruta_alumno_tipo
+      ON puntos_ruta (alumno_id, tipo)
+      WHERE alumno_id IS NOT NULL;
 
       -- ============================================
       -- NUEVAS TABLAS DE VINCULACIÓN
@@ -186,7 +196,7 @@ const crearTablas = async () => {
       CREATE TABLE IF NOT EXISTS codigos_invitacion (
         id SERIAL PRIMARY KEY,
         codigo VARCHAR(20) UNIQUE NOT NULL,
-        tipo VARCHAR(20) NOT NULL CHECK (tipo IN ('colegio_admin', 'colegio_conductor', 'conductor_padre')),
+        tipo VARCHAR(20) NOT NULL CHECK (tipo IN ('colegio_admin', 'colegio_conductor', 'conductor_padre', 'padre_compartido')),
         entidad_id INTEGER,
         creado_por INTEGER NOT NULL,
         usado_por INTEGER REFERENCES usuarios(id),
@@ -200,7 +210,7 @@ const crearTablas = async () => {
 
       CREATE TABLE IF NOT EXISTS vinculaciones (
         id SERIAL PRIMARY KEY,
-        tipo VARCHAR(30) NOT NULL CHECK (tipo IN ('colegio_admin', 'colegio_conductor', 'conductor_padre')),
+        tipo VARCHAR(30) NOT NULL CHECK (tipo IN ('colegio_admin', 'colegio_conductor', 'conductor_padre', 'padre_compartido')),
         entidad_id INTEGER NOT NULL,
         vinculado_por INTEGER NOT NULL,
         colegio_id INTEGER REFERENCES colegios(id),
@@ -209,6 +219,41 @@ const crearTablas = async () => {
         estado VARCHAR(20) DEFAULT 'activo' CHECK (estado IN ('activo', 'pendiente', 'expirado', 'rechazado', 'inactivo')),
         creado_en TIMESTAMP DEFAULT NOW(),
         actualizado_en TIMESTAMP DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS avisos_informativos (
+        id SERIAL PRIMARY KEY,
+        colegio_id INTEGER REFERENCES colegios(id),
+        titulo VARCHAR(150) NOT NULL,
+        contenido TEXT NOT NULL,
+        tipo VARCHAR(50) DEFAULT 'politica_comunicacion',
+        activo BOOLEAN DEFAULT true,
+        creado_en TIMESTAMP DEFAULT NOW(),
+        actualizado_en TIMESTAMP DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS alumno_padres (
+        id SERIAL PRIMARY KEY,
+        alumno_id INTEGER REFERENCES alumnos(id) ON DELETE CASCADE,
+        padre_id INTEGER REFERENCES usuarios(id) ON DELETE CASCADE,
+        rol VARCHAR(50) DEFAULT 'principal',
+        creado_en TIMESTAMP DEFAULT NOW(),
+        UNIQUE(alumno_id, padre_id)
+      );
+
+      CREATE TABLE IF NOT EXISTS programacion_rutas (
+        id SERIAL PRIMARY KEY,
+        alumno_id INTEGER REFERENCES alumnos(id) ON DELETE CASCADE,
+        fecha DATE NOT NULL,
+        ruta_id INTEGER REFERENCES rutas(id) ON DELETE SET NULL,
+        parada VARCHAR(150),
+        latitude DECIMAL(10,8),
+        longitude DECIMAL(11,8),
+        tipo VARCHAR(20) DEFAULT 'ambos',
+        nota TEXT,
+        creado_por INTEGER REFERENCES usuarios(id),
+        creado_en TIMESTAMP DEFAULT NOW(),
+        UNIQUE(alumno_id, fecha, tipo)
       );
     `);
 
@@ -248,6 +293,13 @@ const crearTablas = async () => {
         'setup'
       )
       ON CONFLICT (tipo) DO NOTHING;
+
+      INSERT INTO avisos_informativos (titulo, contenido, tipo)
+      VALUES (
+        'Política de Comunicación',
+        'Bienvenido al panel informativo. Aquí podrá gestionar la comunicación con los padres y conductores. Recuerde seguir nuestras políticas de privacidad.',
+        'politica_comunicacion'
+      ) ON CONFLICT DO NOTHING;
     `);
 
     console.log('✅ Datos iniciales insertados');

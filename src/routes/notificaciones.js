@@ -34,12 +34,12 @@ const construirMensajeAlerta = async ({ colegioId, minutosRestantes }) => {
 
     let anuncio = null;
 
-    if (colegioId && minutos === 5) {
+    if (colegioId && Number(minutos) === 5) {
         const resultado = await pool.query(
             `SELECT id, titulo, mensaje, orden
              FROM anuncios_voz
-             WHERE colegio_id = $1 AND activo = true
-             ORDER BY orden, id
+             WHERE (colegio_id = $1 OR colegio_id IS NULL) AND activo = true
+             ORDER BY COALESCE(colegio_id, 0) DESC, orden ASC, RANDOM()
              LIMIT 1`,
             [colegioId]
         );
@@ -153,9 +153,10 @@ router.post('/alerta-bus', async (req, res) => {
         const colegioRelacionadoId = colegioId || await obtenerColegioPorRuta(rutaId);
 
         const padres = await pool.query(
-            `SELECT DISTINCT a.padre_id, u.nombre
+            `SELECT DISTINCT ap.padre_id, u.nombre
              FROM alumnos a
-             JOIN usuarios u ON u.id = a.padre_id
+             JOIN alumno_padres ap ON ap.alumno_id = a.id
+             JOIN usuarios u ON u.id = ap.padre_id
              WHERE a.ruta_id = $1 AND a.activo = true`,
             [rutaId]
         );

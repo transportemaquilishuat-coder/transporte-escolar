@@ -1,4 +1,7 @@
 const pool = require('../database');
+const { enviarNotificacionPush, enviarNotificacionAlumno } = require('../utils/notificaciones');
+const { autoNombrarRuta } = require('../utils/geoNaming');
+const { sincronizarPuntoAlumno } = require('../utils/rutaPuntos');
 
 const CONFIG_UI_POR_DEFECTO = {
     mostrarAvisoAbordaje: false,
@@ -59,10 +62,10 @@ exports.alumnosPorConductor = async (req, res) => {
                 a.id,
                 a.nombre,
                 a.grado,
-                a.ruta_id AS "rutaId",
-                a.parada,
-                a.latitude,
-                a.longitude,
+                COALESCE(pr.ruta_id, a.ruta_id) AS "rutaId",
+                COALESCE(pr.parada, a.parada) AS parada,
+                COALESCE(pr.latitude, a.latitude) AS latitude,
+                COALESCE(pr.longitude, a.longitude) AS longitude,
                 a.orden,
                 CASE
                     WHEN EXISTS (
@@ -79,10 +82,21 @@ exports.alumnosPorConductor = async (req, res) => {
                     FROM ausencias au
                     WHERE au.alumno_id = a.id
                       AND au.fecha = CURRENT_DATE
-                ) AS ausente
+                ) AS ausente,
+                pr.nota as "notaProgramacion",
+                (pr.id IS NOT NULL) as "esCambioTemporal"
              FROM alumnos a
+             LEFT JOIN LATERAL (
+                SELECT * FROM programacion_rutas 
+                WHERE alumno_id = a.id AND fecha = CURRENT_DATE
+                ORDER BY CASE WHEN tipo = 'ambos' THEN 1 ELSE 2 END
+                LIMIT 1
+             ) pr ON true
              WHERE a.activo = true
-               AND a.ruta_id = ANY($1::int[])
+               AND (
+                 (pr.id IS NULL AND a.ruta_id = ANY($1::int[])) OR
+                 (pr.id IS NOT NULL AND pr.ruta_id = ANY($1::int[]))
+               )
              ORDER BY a.orden, a.nombre`,
             [rutasResult.rows.map((ruta) => ruta.id)]
         );
@@ -114,7 +128,8 @@ exports.reportarAusencia = async (req, res) => {
 
     try {
         const alumnoResult = await pool.query(
-            `SELECT a.id, a.padre_id, COALESCE(u.nombre, 'Padre') AS padre_nombre
+            `SELECT a.id, a.padre_id, a.ruta_id, COALESCE(u.nombre, 'Padre') AS padre_nombre,
+                    u.fecha_inicio_servicio, u.fecha_fin_servicio
              FROM alumnos a
              LEFT JOIN usuarios u ON u.id = a.padre_id
              WHERE a.id = $1`,
@@ -126,6 +141,18 @@ exports.reportarAusencia = async (req, res) => {
         }
 
         const alumno = alumnoResult.rows[0];
+
+        // VALIDACIÓN DE FECHAS DE SERVICIO
+        const hoy = new Date();
+        const inicio = alumno.fecha_inicio_servicio ? new Date(alumno.fecha_inicio_servicio) : null;
+        const fin = alumno.fecha_fin_servicio ? new Date(alumno.fecha_fin_servicio) : null;
+
+        if (inicio && hoy < inicio) {
+            return res.status(403).json({ error: 'El servicio aún no ha comenzado para este periodo' });
+        }
+        if (fin && hoy > fin) {
+            return res.status(403).json({ error: 'El servicio para este periodo ha finalizado' });
+        }
 
         const existente = await pool.query(
             `SELECT * FROM ausencias
@@ -155,6 +182,16 @@ exports.reportarAusencia = async (req, res) => {
         );
 
         const ausencia = resultado.rows[0];
+
+        // Emitir evento por socket para actualización en tiempo real
+        if (req.io && alumno.ruta_id) {
+            req.io.to(`ruta:${alumno.ruta_id}`).emit('alumno:ausencia', {
+                alumnoId,
+                ausente: true,
+                mensaje: `Ausencia reportada: ${alumno.nombre}`
+            });
+        }
+
         res.json({
             mensaje: 'Ausencia reportada correctamente',
             ausencia: {
@@ -213,7 +250,7 @@ exports.marcarAbordado = async (req, res) => {
 
     try {
         const alumnoResult = await pool.query(
-            `SELECT id, nombre, ruta_id
+            `SELECT id, nombre, ruta_id, padre_id
              FROM alumnos
              WHERE id = $1 AND activo = true`,
             [alumnoId]
@@ -240,6 +277,23 @@ exports.marcarAbordado = async (req, res) => {
                  VALUES ($1, $2, 'abordado', $3)`,
                 [alumno.ruta_id, null, `alumnoId:${alumno.id}`]
             );
+
+            // Notificar a todos los padres de forma asíncrona
+            enviarNotificacionAlumno(
+                alumno.id,
+                'Abordaje confirmado',
+                `${alumno.nombre} ha subido al transporte escolar.`,
+                { tipo: 'abordado', alumnoId: alumno.id }
+            ).catch(err => console.error('Error notificacion abordaje:', err));
+
+            // Emitir evento por socket para actualización en tiempo real (para el conductor y otros padres)
+            if (req.io && alumno.ruta_id) {
+                req.io.to(`ruta:${alumno.ruta_id}`).emit('alumno:abordado', {
+                    alumnoId: alumno.id,
+                    estado: 'abordado',
+                    mensaje: `${alumno.nombre} ha subido al bus`
+                });
+            }
         }
 
         res.json({
@@ -309,6 +363,11 @@ exports.inscribirAlumnoPorConductor = async (req, res) => {
                 orden ?? null,
             ]
         );
+
+        await sincronizarPuntoAlumno(resultado.rows[0].id);
+
+        // Auto-nombrar ruta basado en la geoposición de los alumnos
+        autoNombrarRuta(ruta_id).catch(err => console.error('Error auto-nombrando ruta:', err));
 
         res.status(201).json({
             mensaje: 'Alumno inscrito correctamente por el conductor',

@@ -2,6 +2,8 @@ require('dotenv').config();
 const express = require('express');
 const router = express.Router();
 const pool = require('../database');
+const { autoNombrarRuta } = require('../utils/geoNaming');
+const { sincronizarPuntoAlumno } = require('../utils/rutaPuntos');
 
 router.get('/dashboard', async (req, res) => {
     try {
@@ -39,12 +41,32 @@ router.get('/conductores', async (req, res) => {
 router.get('/alumnos', async (req, res) => {
     try {
         const resultado = await pool.query(
-            `SELECT a.*, r.nombre as ruta_nombre, u.nombre as padre_nombre
-       FROM alumnos a
-       LEFT JOIN rutas r ON r.id = a.ruta_id
-       LEFT JOIN usuarios u ON u.id = a.padre_id
-       WHERE a.activo = true
-       ORDER BY a.nombre`
+            `SELECT 
+                a.id,
+                a.nombre,
+                a.grado,
+                COALESCE(pr.ruta_id, a.ruta_id) as ruta_id,
+                COALESCE(nr.nombre, r.nombre) as ruta_nombre,
+                a.padre_id,
+                u.nombre as padre_nombre,
+                COALESCE(pr.parada, a.parada) as parada,
+                COALESCE(pr.latitude, a.latitude) as latitude,
+                COALESCE(pr.longitude, a.longitude) as longitude,
+                a.orden,
+                a.activo,
+                (pr.id IS NOT NULL) as "tieneCambioHoy"
+             FROM alumnos a
+             LEFT JOIN LATERAL (
+                SELECT * FROM programacion_rutas 
+                WHERE alumno_id = a.id AND fecha = CURRENT_DATE
+                ORDER BY CASE WHEN tipo = 'ambos' THEN 1 ELSE 2 END
+                LIMIT 1
+             ) pr ON true
+             LEFT JOIN rutas r ON r.id = a.ruta_id
+             LEFT JOIN rutas nr ON nr.id = pr.ruta_id
+             LEFT JOIN usuarios u ON u.id = a.padre_id
+             WHERE a.activo = true
+             ORDER BY a.nombre`
         );
         res.json({ alumnos: resultado.rows });
     } catch (error) {
@@ -60,6 +82,14 @@ router.post('/alumnos', async (req, res) => {
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *`,
             [nombre, grado, ruta_id, padre_id, parada, latitude ?? null, longitude ?? null, orden]
         );
+
+        await sincronizarPuntoAlumno(resultado.rows[0].id);
+
+        // Auto-nombrar ruta basado en la geoposición
+        if (ruta_id) {
+            autoNombrarRuta(ruta_id).catch(err => console.error('Error auto-nombrando ruta:', err));
+        }
+
         res.json({ mensaje: 'Alumno agregado', alumno: resultado.rows[0] });
     } catch (error) {
         res.status(500).json({ error: error.message });
@@ -108,6 +138,35 @@ router.put('/colegios/:id/logo', async (req, res) => {
     }
 });
 
+router.put('/colegios/:id/ubicacion', async (req, res) => {
+    const { latitude, longitude } = req.body;
+
+    if (latitude === undefined || longitude === undefined) {
+        return res.status(400).json({ error: 'latitude y longitude son requeridos' });
+    }
+
+    try {
+        const resultado = await pool.query(
+            `UPDATE colegios
+             SET latitude = $1, longitude = $2
+             WHERE id = $3
+             RETURNING id, nombre, latitude, longitude`,
+            [latitude, longitude, req.params.id]
+        );
+
+        if (resultado.rows.length === 0) {
+            return res.status(404).json({ error: 'Colegio no encontrado' });
+        }
+
+        res.json({
+            mensaje: 'Ubicación del colegio actualizada',
+            colegio: resultado.rows[0],
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 router.put('/alumnos/:id', async (req, res) => {
     const { id } = req.params;
     const {
@@ -130,6 +189,7 @@ router.put('/alumnos/:id', async (req, res) => {
         }
 
         const alumno = actual.rows[0];
+        const rutaAnteriorId = alumno.ruta_id;
         const resultado = await pool.query(
             `UPDATE alumnos
              SET nombre = $1,
@@ -156,6 +216,16 @@ router.put('/alumnos/:id', async (req, res) => {
                 id,
             ]
         );
+
+        await sincronizarPuntoAlumno(resultado.rows[0].id);
+
+        // Auto-nombrar ruta basado en la geoposición
+        if (resultado.rows[0].ruta_id) {
+            autoNombrarRuta(resultado.rows[0].ruta_id).catch(err => console.error('Error auto-nombrando ruta:', err));
+        }
+        if (rutaAnteriorId && rutaAnteriorId !== resultado.rows[0].ruta_id) {
+            autoNombrarRuta(rutaAnteriorId).catch(err => console.error('Error auto-nombrando ruta anterior:', err));
+        }
 
         res.json({ mensaje: 'Alumno actualizado', alumno: resultado.rows[0] });
     } catch (error) {
@@ -185,14 +255,14 @@ router.get('/rutas', async (req, res) => {
 router.post('/rutas', async (req, res) => {
     const { nombre, conductor_id, colegio_id } = req.body;
 
-    if (!nombre || !colegio_id) {
-        return res.status(400).json({ error: 'nombre y colegio_id son requeridos' });
+    if (!nombre) {
+        return res.status(400).json({ error: 'nombre es requerido' });
     }
 
     try {
         const resultado = await pool.query(
             `INSERT INTO rutas (nombre, conductor_id, colegio_id) VALUES ($1, $2, $3) RETURNING *`,
-            [nombre, conductor_id ?? null, colegio_id]
+            [nombre, conductor_id ?? null, colegio_id ?? null]
         );
         res.json({ mensaje: 'Ruta creada', ruta: resultado.rows[0] });
     } catch (error) {

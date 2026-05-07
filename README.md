@@ -101,74 +101,33 @@ Los codigos no son requisito para crear cuenta. Los codigos sirven para vincular
 - `colegio_admin`: cuenta `admin` -> colegio creado por super admin.
 - `colegio_conductor`: cuenta `conductor` -> colegio.
 - `conductor_padre`: cuenta `padre` -> conductor.
+- `padre_compartido`: cuenta `padre` -> alumno (permite que varios padres sigan al mismo alumno).
 
-Flujo recomendado:
+### Avisos Informativos (Política de Comunicación)
 
-1. Crear cuenta con `POST /api/auth/registro`.
-2. Verificar codigo con `GET /api/vinculaciones/verificar-codigo/:codigo`.
-3. Vincular cuenta autenticada con `POST /api/vinculaciones/vincular-con-codigo`.
+- `GET /api/avisos`: Lista avisos activos para el colegio del usuario.
+- `GET /api/avisos/politica-comunicacion`: Obtiene específicamente la política de comunicación.
 
-Payload de vinculacion:
+### Programación de Cambios (Padres)
 
-```json
-{
-  "codigo": "ABC12345"
-}
-```
+- `GET /api/programacion/mis-hijos-cambios`: Lista cambios programados a futuro.
+- `POST /api/programacion`: Crea o actualiza un cambio de ruta/parada para un día específico.
+- `DELETE /api/programacion/:id`: Cancela un cambio programado.
 
-Tambien existe `POST /api/vinculaciones/registro-con-codigo` para compatibilidad, pero la logica principal es registro libre + vinculacion posterior.
+### Padres
 
-### Rutas
-
-- `GET /api/rutas`
-- `GET /api/rutas/:id`
-
-### Alumnos
-
-- `GET /api/alumnos`
-- `GET /api/alumnos/:id`
-
-### Pagos
-
-- `GET /api/pagos`
-- `GET /api/pagos/pendientes`
-
-### Asignaciones
-
-- `GET /api/asignaciones/conductor/:conductorId`
-- `POST /api/asignaciones/ausencia`
-- `GET /api/asignaciones/ausencias/:rutaId`
-- `POST /api/asignaciones/abordar`
-
-Notas:
-- `GET /api/asignaciones/conductor/:conductorId` ahora responde desde PostgreSQL real.
-- Incluye `latitude` y `longitude` del alumno cuando existan.
-- El estado `abordado` se calcula usando `eventos_ruta` del día actual.
-- El estado `ausente` se calcula usando `ausencias` del día actual.
-
-### Admin
-
-- `GET /api/admin/dashboard`
-- `GET /api/admin/conductores`
-- `GET /api/admin/alumnos`
-- `POST /api/admin/alumnos`
-- `PUT /api/admin/alumnos/:id`
-- `GET /api/admin/rutas`
-- `POST /api/admin/rutas`
-- `GET /api/admin/eventos-hoy`
-- `GET /api/admin/configuracion`
-- `PUT /api/admin/configuracion/:clave`
-- `GET /api/admin/conductores-activos`
+- `GET /api/padres/mis-hijos`: Ahora soporta multi-padre y detecta cambios programados para el día actual.
+- `POST /api/padres/hijos/:alumnoId/generar-invitacion`: Genera un código para invitar a otro padre.
+- `PUT /api/padres/hijos/:alumnoId/punto-recogida`: Define el punto de recogida fijo.
+- `GET /api/padres/:padreId/historial`: Historial de viajes.
 
 ### Super Admin
 
 - `GET /api/super-admin/dashboard`
 - `GET /api/super-admin/colegios`
-- `GET /api/super-admin/anuncios`
-- `POST /api/super-admin/anuncios`
-- `PUT /api/super-admin/anuncios/:id`
-- `DELETE /api/super-admin/anuncios/:id`
-- `POST /api/super-admin/usuarios`
+- `POST /api/super-admin/colegios/:colegioId/impersonate`: Obtiene token para entrar como admin del colegio.
+- `POST /api/super-admin/colegios/:colegioId/asignar-admin`: Vincula un admin por email.
+- `POST /api/super-admin/avisos`: CRUD de avisos informativos.
 - `GET /api/super-admin/alertas/recogida-5min`
 - `PUT /api/super-admin/alertas/recogida-5min`
 - `GET /api/super-admin/mensajes-diarios`

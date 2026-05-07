@@ -87,6 +87,10 @@ const asegurarEsquema = async () => {
             ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS placa VARCHAR(20);
             ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS activo BOOLEAN DEFAULT true;
             ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS colegio_id INTEGER;
+            ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS fecha_inicio_servicio DATE;
+            ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS fecha_fin_servicio DATE;
+            ALTER TABLE colegios ADD COLUMN IF NOT EXISTS latitude DECIMAL(10,8);
+            ALTER TABLE colegios ADD COLUMN IF NOT EXISTS longitude DECIMAL(11,8);
         `);
 
         // 3. Tablas de negocio
@@ -137,6 +141,8 @@ const asegurarEsquema = async () => {
                 monto DECIMAL(10,2),
                 mes VARCHAR(20),
                 estado VARCHAR(20) DEFAULT 'pendiente',
+                transaccion_id VARCHAR(100),
+                metodo_pago VARCHAR(50),
                 creado_en TIMESTAMP DEFAULT NOW()
             );
             CREATE TABLE IF NOT EXISTS tokens_push (
@@ -150,6 +156,8 @@ const asegurarEsquema = async () => {
             CREATE TABLE IF NOT EXISTS puntos_ruta (
                 id SERIAL PRIMARY KEY,
                 ruta_id INTEGER REFERENCES rutas(id),
+                alumno_id INTEGER REFERENCES alumnos(id),
+                tipo VARCHAR(20) DEFAULT 'recogida',
                 latitud DECIMAL(10,8) NOT NULL,
                 longitud DECIMAL(11,8) NOT NULL,
                 orden INTEGER NOT NULL,
@@ -243,11 +251,60 @@ const asegurarEsquema = async () => {
                 creado_en TIMESTAMP DEFAULT NOW(),
                 actualizado_en TIMESTAMP DEFAULT NOW()
             );
+            CREATE TABLE IF NOT EXISTS avisos_informativos (
+                id SERIAL PRIMARY KEY,
+                colegio_id INTEGER REFERENCES colegios(id),
+                titulo VARCHAR(150) NOT NULL,
+                contenido TEXT NOT NULL,
+                tipo VARCHAR(50) DEFAULT 'politica_comunicacion',
+                activo BOOLEAN DEFAULT true,
+                creado_en TIMESTAMP DEFAULT NOW(),
+                actualizado_en TIMESTAMP DEFAULT NOW()
+            );
+            CREATE TABLE IF NOT EXISTS alumno_padres (
+                id SERIAL PRIMARY KEY,
+                alumno_id INTEGER REFERENCES alumnos(id) ON DELETE CASCADE,
+                padre_id INTEGER REFERENCES usuarios(id) ON DELETE CASCADE,
+                rol VARCHAR(50) DEFAULT 'principal',
+                creado_en TIMESTAMP DEFAULT NOW(),
+                UNIQUE(alumno_id, padre_id)
+            );
+            CREATE TABLE IF NOT EXISTS programacion_rutas (
+                id SERIAL PRIMARY KEY,
+                alumno_id INTEGER REFERENCES alumnos(id) ON DELETE CASCADE,
+                fecha DATE NOT NULL,
+                ruta_id INTEGER REFERENCES rutas(id) ON DELETE SET NULL,
+                parada VARCHAR(150),
+                latitude DECIMAL(10,8),
+                longitude DECIMAL(11,8),
+                tipo VARCHAR(20) DEFAULT 'ambos',
+                nota TEXT,
+                creado_por INTEGER REFERENCES usuarios(id),
+                creado_en TIMESTAMP DEFAULT NOW(),
+                UNIQUE(alumno_id, fecha, tipo)
+            );
         `);
 
         await client.query(`
             ALTER TABLE alertas_configuracion
             ADD COLUMN IF NOT EXISTS mensajes_diarios JSONB DEFAULT '[]'::jsonb;
+
+            ALTER TABLE puntos_ruta ADD COLUMN IF NOT EXISTS alumno_id INTEGER REFERENCES alumnos(id);
+            ALTER TABLE puntos_ruta ADD COLUMN IF NOT EXISTS tipo VARCHAR(20) DEFAULT 'recogida';
+
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_puntos_ruta_alumno_tipo
+            ON puntos_ruta (alumno_id, tipo)
+            WHERE alumno_id IS NOT NULL;
+
+            ALTER TABLE pagos ADD COLUMN IF NOT EXISTS transaccion_id VARCHAR(100);
+            ALTER TABLE pagos ADD COLUMN IF NOT EXISTS metodo_pago VARCHAR(50);
+
+            -- Actualizar constraints de tipos de vinculación
+            ALTER TABLE codigos_invitacion DROP CONSTRAINT IF EXISTS codigos_invitacion_tipo_check;
+            ALTER TABLE codigos_invitacion ADD CONSTRAINT codigos_invitacion_tipo_check CHECK (tipo IN ('colegio_admin', 'colegio_conductor', 'conductor_padre', 'padre_compartido'));
+
+            ALTER TABLE vinculaciones DROP CONSTRAINT IF EXISTS vinculaciones_tipo_check;
+            ALTER TABLE vinculaciones ADD CONSTRAINT vinculaciones_tipo_check CHECK (tipo IN ('colegio_admin', 'colegio_conductor', 'conductor_padre', 'padre_compartido'));
 
             UPDATE colegios
             SET admin_id = NULL
@@ -256,8 +313,15 @@ const asegurarEsquema = async () => {
                   SELECT 1 FROM usuarios u WHERE u.id = colegios.admin_id
               );
 
-            DO $$
-            BEGIN
+
+INSERT INTO alumno_padres (alumno_id, padre_id, rol)
+SELECT id, padre_id, 'principal'
+FROM alumnos
+WHERE padre_id IS NOT NULL
+ON CONFLICT (alumno_id, padre_id) DO NOTHING;
+
+DO $$
+BEGIN
                 IF NOT EXISTS (
                     SELECT 1
                     FROM information_schema.table_constraints
@@ -326,6 +390,15 @@ const asegurarEsquema = async () => {
                     'setup'
                 )
             ON CONFLICT (tipo) DO NOTHING
+        `);
+
+        await pool.query(`
+            INSERT INTO avisos_informativos (titulo, contenido, tipo)
+            VALUES (
+                'Política de Comunicación',
+                'Bienvenido al panel informativo. Aquí podrá gestionar la comunicación con los padres y conductores. Recuerde seguir nuestras políticas de privacidad.',
+                'politica_comunicacion'
+            ) ON CONFLICT DO NOTHING
         `);
 
         console.log('[DB] Super Admins oficiales verificados/creados.');

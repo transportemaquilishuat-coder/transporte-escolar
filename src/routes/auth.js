@@ -3,18 +3,21 @@ const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcryptjs');
 const pool = require('../database');
+const { authenticateToken } = require('../middleware/auth');
 const { SESSION_EXPIRES_IN, firmarTokenSesion } = require('../utils/authTokens');
 
 const ROLES_VALIDOS_USUARIO = ['padre', 'conductor', 'admin'];
 
 // POST /api/auth/login
 router.post('/login', async (req, res) => {
-    const { email, password } = req.body;
-    const emailNormalizado = String(email || '').trim().toLowerCase();
+    const { email, correo, password, contrasena } = req.body;
+    const valorEmail = email || correo;
+    const valorPassword = password || contrasena || req.body['contrase\u00f1a'];
+    const emailNormalizado = String(valorEmail || '').trim().toLowerCase();
 
     console.log(`[LOGIN] Intento para: ${emailNormalizado}`);
 
-    if (!emailNormalizado || !password) {
+    if (!emailNormalizado || !valorPassword) {
         return res.status(400).json({ error: 'Email y contraseña requeridos' });
     }
 
@@ -29,7 +32,7 @@ router.post('/login', async (req, res) => {
         if (resultadoSuperAdmin.rows.length > 0) {
             console.log(`[LOGIN] Superadmin encontrado: ${emailNormalizado}. Verificando password...`);
             const superAdmin = resultadoSuperAdmin.rows[0];
-            const passwordValida = await bcrypt.compare(password, superAdmin.password);
+            const passwordValida = await bcrypt.compare(valorPassword, superAdmin.password);
 
             if (!passwordValida) {
                 console.log(`[LOGIN] Superadmin ${emailNormalizado}: Password incorrecta`);
@@ -78,7 +81,7 @@ router.post('/login', async (req, res) => {
             return res.status(403).json({ error: 'Usuario inactivo. Contacte al administrador.' });
         }
 
-        const passwordValida = await bcrypt.compare(password, usuario.password);
+        const passwordValida = await bcrypt.compare(valorPassword, usuario.password);
         if (!passwordValida) {
             console.log(`[LOGIN] Usuario ${emailNormalizado}: Password incorrecta`);
             return res.status(401).json({ error: 'Credenciales incorrectas' });
@@ -115,12 +118,28 @@ router.post('/login', async (req, res) => {
 
 // POST /api/auth/registro
 router.post('/registro', async (req, res) => {
-    const { nombre, email, password, rol, telefono, dui, licencia, placa } = req.body;
-    const emailNormalizado = String(email || '').trim().toLowerCase();
+    const {
+        nombre, email, correo, password, contrasena, contraseña, rol, telefono, dui, licencia, placa,
+        fechaInicio, fechaFin
+    } = req.body;
+    const valorEmail = email || correo;
+    const valorPassword = password || contrasena || req.body['contrase\u00f1a'];
+    const emailNormalizado = String(valorEmail || '').trim().toLowerCase();
 
-    if (!nombre || !emailNormalizado || !password || !rol)
-        return res.status(400).json({ error: 'Campos requeridos incompletos' });
+    if (!nombre || !emailNormalizado || !valorPassword || !rol) {
+        const missing = [];
+        if (!nombre) missing.push('nombre');
+        if (!emailNormalizado) missing.push('email');
+        if (!valorPassword) missing.push('password');
+        if (!rol) missing.push('rol');
+        return res.status(400).json({
+            error: 'Nombre, email, password y rol son requeridos',
+            detalle: `Faltan los siguientes campos: ${missing.join(', ')}`,
+            recibido: { nombre: !!nombre, email: !!emailNormalizado, password: !!valorPassword, rol: !!rol }
+        });
+    }
 
+    // Validaciones específicas por rol para garantizar perfil completo desde el inicio
     if (!ROLES_VALIDOS_USUARIO.includes(rol)) {
         return res.status(400).json({ error: 'Rol inválido para registro público' });
     }
@@ -136,13 +155,13 @@ router.post('/registro', async (req, res) => {
         if (existe.rows.length > 0)
             return res.status(400).json({ error: 'El correo ya está registrado' });
 
-        const passwordHash = await bcrypt.hash(password, 10);
+        const passwordHash = await bcrypt.hash(valorPassword, 10);
 
         const resultado = await pool.query(
-            `INSERT INTO usuarios (nombre, email, password, rol, telefono, dui, licencia, placa)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-       RETURNING id, nombre, email, rol, telefono, colegio_id`,
-            [nombre, emailNormalizado, passwordHash, rol, telefono, dui, licencia, placa]
+            `INSERT INTO usuarios (nombre, email, password, rol, telefono, dui, licencia, placa, fecha_inicio_servicio, fecha_fin_servicio)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+       RETURNING id, nombre, email, rol, telefono, colegio_id, fecha_inicio_servicio, fecha_fin_servicio`,
+            [nombre, emailNormalizado, passwordHash, rol, telefono, dui, licencia, placa, fechaInicio || null, fechaFin || null]
         );
 
         const usuario = resultado.rows[0];
@@ -226,4 +245,50 @@ router.post('/cambiar-password', async (req, res) => {
         res.status(500).json({ error: error.message });
     }
 });
+// GET /api/auth/me
+// Verifica el token y devuelve los datos del usuario actual
+router.get('/me', authenticateToken, async (req, res) => {
+    try {
+        const { id, rol, tipo } = req.user;
+
+        if (tipo === 'super_admin') {
+            const result = await pool.query('SELECT id, nombre, email FROM super_admins WHERE id = $1', [id]);
+            if (result.rows.length === 0) return res.status(404).json({ error: 'Superadmin no encontrado' });
+            return res.json({
+                usuario: {
+                    ...result.rows[0],
+                    rol: 'super_admin'
+                }
+            });
+        }
+
+        const result = await pool.query(
+            `SELECT u.*, c.nombre as colegio_nombre, c.logo_url as colegio_logo_url
+             FROM usuarios u
+             LEFT JOIN colegios c ON c.id = u.colegio_id
+             WHERE u.id = $1`,
+            [id]
+        );
+
+        if (result.rows.length === 0) return res.status(404).json({ error: 'Usuario no encontrado' });
+
+        const usuario = result.rows[0];
+        res.json({
+            usuario: {
+                id: usuario.id,
+                nombre: usuario.nombre,
+                email: usuario.email,
+                rol: usuario.rol,
+                telefono: usuario.telefono,
+                colegioId: usuario.colegio_id,
+                colegioNombre: usuario.colegio_nombre || null,
+                logoUrl: usuario.colegio_logo_url || null,
+            }
+        });
+    } catch (error) {
+        console.error('Error en /me:', error);
+        res.status(500).json({ error: 'Error interno del servidor' });
+    }
+});
+
 module.exports = router;

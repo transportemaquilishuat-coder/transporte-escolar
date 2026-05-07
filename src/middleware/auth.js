@@ -33,11 +33,12 @@ function requireRole(...roles) {
             return res.status(401).json({ error: 'Usuario no autenticado' });
         }
 
-        if (!roles.includes(req.user.rol)) {
-            return res.status(403).json({ error: 'No tienes permisos para esta acción' });
+        // El super_admin tiene acceso a TODO por diseño de gobernanza
+        if (req.user.rol === 'super_admin' || roles.includes(req.user.rol)) {
+            return next();
         }
 
-        next();
+        return res.status(403).json({ error: 'No tienes permisos para esta acción' });
     };
 }
 

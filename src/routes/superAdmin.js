@@ -8,7 +8,14 @@ const {
     listarColegiosSuperAdmin,
     crearColegioSuperAdmin,
     generarCodigoAdminSuperAdmin,
+    eliminarColegioSuperAdmin,
+    editarColegioSuperAdmin,
+    toggleColegioSuperAdmin,
+    asignarAdminSuperAdmin,
+    desvincularAdminSuperAdmin,
 } = require('../controllers/colegiosSuperAdmin');
+
+const { SESSION_EXPIRES_IN, firmarTokenSesion } = require('../utils/authTokens');
 
 router.use(authenticateToken, requireRole('super_admin'));
 
@@ -102,7 +109,76 @@ router.get('/dashboard', async (req, res) => {
 
 router.get('/colegios', listarColegiosSuperAdmin);
 router.post('/colegios', crearColegioSuperAdmin);
+router.put('/colegios/:colegioId', editarColegioSuperAdmin);
+router.patch('/colegios/:colegioId/toggle-activo', toggleColegioSuperAdmin);
 router.post('/colegios/:colegioId/codigo', generarCodigoAdminSuperAdmin);
+router.delete('/colegios/:colegioId', eliminarColegioSuperAdmin);
+router.delete('/colegios/:id', (req, res, next) => {
+    req.params.colegioId = req.params.id;
+    next();
+}, eliminarColegioSuperAdmin);
+
+router.post('/colegios/:colegioId/asignar-admin', asignarAdminSuperAdmin);
+router.post('/colegios/:colegioId/desvincular-admin', desvincularAdminSuperAdmin);
+router.delete('/colegios/:colegioId/desvincular-admin', desvincularAdminSuperAdmin);
+
+// POST /api/super-admin/colegios/:colegioId/impersonate
+// Permite al superadmin obtener un token para entrar al panel de un colegio como administrador
+router.post('/colegios/:colegioId/impersonate', async (req, res) => {
+    const { colegioId } = req.params;
+
+    try {
+        const resultado = await pool.query(
+            `SELECT c.*, u.id as admin_user_id, u.email as admin_email, u.nombre as admin_nombre
+             FROM colegios c
+             LEFT JOIN usuarios u ON u.id = c.admin_id
+             WHERE c.id = $1`,
+            [colegioId]
+        );
+
+        if (resultado.rows.length === 0) {
+            return res.status(404).json({ error: 'Colegio no encontrado' });
+        }
+
+        const colegio = resultado.rows[0];
+
+        // Construir el payload del token. 
+        // Si hay un admin real, usamos sus datos, si no, generamos un acceso administrativo "fantasma"
+        const payload = {
+            id: colegio.admin_user_id || `sa_${req.user.id}_c${colegio.id}`,
+            email: colegio.admin_email || `superadmin+${colegio.id}@transporte.local`,
+            nombre: `[SA] ${colegio.admin_nombre || 'Admin Temporal'}`,
+            rol: 'admin', // IMPORTANTE: El rol debe ser 'admin' para que el frontend y los controladores lo acepten
+            tipo: 'usuario',
+            colegio_id: colegio.id,
+            colegio_nombre: colegio.nombre,
+            colegio_logo: colegio.logo_url,
+            isImpersonated: true,
+            superAdminId: req.user.id
+        };
+
+        const token = firmarTokenSesion(payload);
+
+        res.json({
+            mensaje: `Acceso concedido al panel de ${colegio.nombre}`,
+            token,
+            expiresIn: SESSION_EXPIRES_IN,
+            usuario: {
+                id: payload.id,
+                nombre: payload.nombre,
+                email: payload.email,
+                rol: 'admin',
+                colegioId: colegio.id,
+                colegioNombre: colegio.nombre,
+                logoUrl: colegio.logo_url
+            }
+        });
+
+    } catch (error) {
+        console.error('Error en impersonation:', error);
+        res.status(500).json({ error: 'Error interno del servidor' });
+    }
+});
 
 router.get('/colegios/:colegioId/usuarios', async (req, res) => {
     const { colegioId } = req.params;
@@ -217,8 +293,8 @@ router.get('/anuncios', async (req, res) => {
 router.post('/anuncios', async (req, res) => {
     const { colegio_id, titulo, mensaje, orden = 1, activo = true } = req.body;
 
-    if (!colegio_id || !titulo || !mensaje) {
-        return res.status(400).json({ error: 'colegio_id, titulo y mensaje son requeridos' });
+    if (!titulo || !mensaje) {
+        return res.status(400).json({ error: 'titulo y mensaje son requeridos' });
     }
 
     try {
@@ -226,7 +302,7 @@ router.post('/anuncios', async (req, res) => {
             `INSERT INTO anuncios_voz (colegio_id, titulo, mensaje, orden, activo, creado_por)
              VALUES ($1, $2, $3, $4, $5, $6)
              RETURNING *`,
-            [colegio_id, titulo, mensaje, orden, activo, req.user.email]
+            [colegio_id || null, titulo, mensaje, orden, activo, req.user.email]
         );
 
         res.status(201).json({
@@ -600,6 +676,93 @@ router.delete('/alertas/recogida-5min/agenda', async (req, res) => {
             mensaje: 'Agenda eliminada',
             totalEliminadas: resultado.rows.length,
         });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// --- GESTIÓN DE AVISOS INFORMATIVOS ---
+
+router.get('/avisos', async (req, res) => {
+    try {
+        const resultado = await pool.query(
+            `SELECT a.*, c.nombre AS colegio_nombre
+             FROM avisos_informativos a
+             LEFT JOIN colegios c ON c.id = a.colegio_id
+             ORDER BY a.actualizado_en DESC`
+        );
+        res.json({ avisos: resultado.rows });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+router.post('/avisos', async (req, res) => {
+    const { colegio_id, titulo, contenido, tipo = 'politica_comunicacion', activo = true } = req.body;
+
+    if (!titulo || !contenido) {
+        return res.status(400).json({ error: 'titulo y contenido son requeridos' });
+    }
+
+    try {
+        const resultado = await pool.query(
+            `INSERT INTO avisos_informativos (colegio_id, titulo, contenido, tipo, activo)
+             VALUES ($1, $2, $3, $4, $5)
+             RETURNING *`,
+            [colegio_id || null, titulo, contenido, tipo, activo]
+        );
+
+        res.status(201).json({
+            mensaje: 'Aviso informativo creado correctamente',
+            aviso: resultado.rows[0],
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+router.put('/avisos/:id', async (req, res) => {
+    const { colegio_id, titulo, contenido, tipo, activo } = req.body;
+
+    try {
+        const resultado = await pool.query(
+            `UPDATE avisos_informativos
+             SET colegio_id = COALESCE($1, colegio_id),
+                 titulo = COALESCE($2, titulo),
+                 contenido = COALESCE($3, contenido),
+                 tipo = COALESCE($4, tipo),
+                 activo = COALESCE($5, activo),
+                 actualizado_en = NOW()
+             WHERE id = $6
+             RETURNING *`,
+            [colegio_id, titulo, contenido, tipo, activo, req.params.id]
+        );
+
+        if (resultado.rows.length === 0) {
+            return res.status(404).json({ error: 'Aviso no encontrado' });
+        }
+
+        res.json({
+            mensaje: 'Aviso actualizado correctamente',
+            aviso: resultado.rows[0],
+        });
+    } catch (error) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+router.delete('/avisos/:id', async (req, res) => {
+    try {
+        const resultado = await pool.query(
+            'DELETE FROM avisos_informativos WHERE id = $1 RETURNING id',
+            [req.params.id]
+        );
+
+        if (resultado.rows.length === 0) {
+            return res.status(404).json({ error: 'Aviso no encontrado' });
+        }
+
+        res.json({ mensaje: 'Aviso eliminado correctamente' });
     } catch (error) {
         res.status(500).json({ error: error.message });
     }

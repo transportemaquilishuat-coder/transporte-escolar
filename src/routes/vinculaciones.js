@@ -9,6 +9,11 @@ const {
     listarColegiosSuperAdmin,
     crearColegioSuperAdmin,
     generarCodigoAdminSuperAdmin,
+    eliminarColegioSuperAdmin,
+    editarColegioSuperAdmin,
+    toggleColegioSuperAdmin,
+    desvincularAdminSuperAdmin,
+    asignarAdminSuperAdmin,
 } = require('../controllers/colegiosSuperAdmin');
 
 // ============================================
@@ -17,7 +22,7 @@ const {
 
 const verificarCodigo = async (codigo, tipoRequerido) => {
     const resultado = await pool.query(
-        `SELECT c.*, 
+        `SELECT c.*,
       (c.usos_actuales >= c.max_usos) as usado_completamente,
       (c.expira_en IS NOT NULL AND c.expira_en < NOW()) as expirado
      FROM codigos_invitacion c
@@ -46,7 +51,7 @@ const verificarCodigo = async (codigo, tipoRequerido) => {
     return { valido: true, codigo: codigoData };
 };
 
-const TIPOS_CODIGO = ['colegio_admin', 'colegio_conductor', 'conductor_padre'];
+const TIPOS_CODIGO = ['colegio_admin', 'colegio_conductor', 'conductor_padre', 'padre_compartido'];
 
 const generarCodigo = (longitud = 8) => {
     const caracteres = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -65,23 +70,16 @@ const normalizarCodigo = (codigo) =>
 
 const obtenerCodigoValido = async (codigo) => {
     const codigoNormalizado = normalizarCodigo(codigo);
-    let ultimoError = 'Codigo invalido';
+    if (!codigoNormalizado) return { valido: false, error: 'Codigo invalido' };
 
     for (const tipo of TIPOS_CODIGO) {
         const verificacion = await verificarCodigo(codigoNormalizado, tipo);
         if (verificacion.valido) {
             return verificacion;
         }
-
-        if (
-            verificacion.error &&
-            !verificacion.error.includes('tipo de vinculaci')
-        ) {
-            ultimoError = verificacion.error;
-        }
     }
 
-    return { valido: false, error: ultimoError };
+    return { valido: false, error: 'Codigo no encontrado, expirado o invalido' };
 };
 
 const resolverDestinoVinculacion = async (client, codigoData) => {
@@ -104,10 +102,23 @@ const resolverDestinoVinculacion = async (client, codigoData) => {
                 [codigoData.entidad_id]
             );
 
+            // Si el conductor no tiene ruta o colegio asignado aun, devolvemos null en colegioId
+            // Esto permite la vinculacion directa conductor-padre sin dependencia de colegio inmediata
             return {
                 rol: 'padre',
                 colegioId: rutaCond.rows[0]?.colegio_id || null,
                 conductorId: codigoData.entidad_id
+            };
+        }
+        case 'padre_compartido': {
+            const alumno = await client.query(
+                'SELECT colegio_id FROM alumnos a LEFT JOIN rutas r ON r.id = a.ruta_id WHERE a.id = $1',
+                [codigoData.entidad_id]
+            );
+            return {
+                rol: 'padre',
+                colegioId: alumno.rows[0]?.colegio_id || null,
+                alumnoId: codigoData.entidad_id
             };
         }
         default:
@@ -143,16 +154,29 @@ const validarCodigoParaUsuario = (usuario, codigoData) => {
 // ============================================
 
 // GET /api/vinculaciones/superadmin/colegios
-// Lista todos los colegios con su admin vinculado
 router.get('/superadmin/colegios', authenticateToken, requireRole('super_admin'), listarColegiosSuperAdmin);
 
 // POST /api/vinculaciones/superadmin/colegios
-// Crea un nuevo colegio
 router.post('/superadmin/colegios', authenticateToken, requireRole('super_admin'), crearColegioSuperAdmin);
 
+// PUT /api/vinculaciones/superadmin/colegios/:colegioId
+router.put('/superadmin/colegios/:colegioId', authenticateToken, requireRole('super_admin'), editarColegioSuperAdmin);
+
+// PATCH /api/vinculaciones/superadmin/colegios/:colegioId/estado
+router.patch('/superadmin/colegios/:colegioId/estado', authenticateToken, requireRole('super_admin'), toggleColegioSuperAdmin);
+
+// DELETE /api/vinculaciones/superadmin/colegios/:colegioId
+router.delete('/superadmin/colegios/:colegioId', authenticateToken, requireRole('super_admin'), eliminarColegioSuperAdmin);
+
 // POST /api/vinculaciones/superadmin/colegios/:colegioId/codigo
-// Genera c??digo de invitaci??n para que un admin se vincule a este colegio
 router.post('/superadmin/colegios/:colegioId/codigo', authenticateToken, requireRole('super_admin'), generarCodigoAdminSuperAdmin);
+
+// POST /api/vinculaciones/superadmin/colegios/:colegioId/asignar-admin
+router.post('/superadmin/colegios/:colegioId/asignar-admin', authenticateToken, requireRole('super_admin'), asignarAdminSuperAdmin);
+
+// POST /api/vinculaciones/superadmin/colegios/:colegioId/desvincular-admin
+router.post('/superadmin/colegios/:colegioId/desvincular-admin', authenticateToken, requireRole('super_admin'), desvincularAdminSuperAdmin);
+router.delete('/superadmin/colegios/:colegioId/desvincular-admin', authenticateToken, requireRole('super_admin'), desvincularAdminSuperAdmin);
 
 // GET /api/vinculaciones/superadmin/codigos
 // Lista todos los códigos generados
@@ -204,17 +228,45 @@ router.get('/superadmin/codigos', authenticateToken, requireRole('super_admin'),
 // Registro de usuario usando código de invitación
 router.post('/registro-con-codigo', async (req, res) => {
     const {
-        nombre, email, password, telefono, dui,
-        licencia, placa, codigo, rol
+        nombre,
+        email, correo,
+        password, contrasena, contraseña,
+        telefono, dui,
+        licencia, placa,
+        codigo,
+        rol,
+        fechaInicio, fechaFin
     } = req.body;
-    const emailNormalizado = String(email || '').trim().toLowerCase();
 
-    if (!nombre || !emailNormalizado || !password || !codigo || !rol) {
-        return res.status(400).json({ error: 'Nombre, email, contrasena, rol y codigo son requeridos' });
+    const valorEmail = email || correo;
+    const valorPassword = password || contrasena || req.body['contrase\u00f1a'];
+    const emailNormalizado = String(valorEmail || '').trim().toLowerCase();
+
+    if (!nombre || !emailNormalizado || !valorPassword || !rol) {
+        console.log('[REGISTRO VINCULACION] Intento fallido por campos incompletos:', {
+            recibido: {
+                nombre: !!nombre,
+                email: !!emailNormalizado,
+                password: !!valorPassword,
+                codigo: !!codigo,
+                rol: !!rol
+            },
+            body: { ...req.body, password: valorPassword ? '***' : undefined }
+        });
+        const missing = [];
+        if (!nombre) missing.push('nombre');
+        if (!emailNormalizado) missing.push('email');
+        if (!valorPassword) missing.push('password');
+        if (!rol) missing.push('rol');
+        return res.status(400).json({
+            error: 'Campos requeridos incompletos',
+            detalle: `Faltan los siguientes campos: ${missing.join(', ')}`,
+            recibido: { nombre: !!nombre, email: !!emailNormalizado, password: !!valorPassword, codigo: !!codigo, rol: !!rol }
+        });
     }
 
     if (!tipoCodigoEsperadoPorRol[rol]) {
-        return res.status(400).json({ error: 'Rol invalido para vinculacion' });
+        return res.status(400).json({ error: `Rol '${rol}' invalido para vinculacion. Roles validos: ${Object.keys(tipoCodigoEsperadoPorRol).join(', ')}` });
     }
 
     try {
@@ -228,10 +280,44 @@ router.post('/registro-con-codigo', async (req, res) => {
         }
 
         // Verificar código
+        if (!codigo) {
+            const passwordHash = await bcrypt.hash(valorPassword, 10);
+            const resultado = await pool.query(
+                `INSERT INTO usuarios (nombre, email, password, rol, telefono, dui, licencia, placa, fecha_inicio_servicio, fecha_fin_servicio)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+       RETURNING id, nombre, email, rol, telefono, colegio_id, fecha_inicio_servicio, fecha_fin_servicio`,
+                [nombre, emailNormalizado, passwordHash, rol, telefono, dui, licencia, placa, fechaInicio || null, fechaFin || null]
+            );
+
+            const nuevoUsuario = resultado.rows[0];
+            const token = firmarTokenSesion({
+                id: nuevoUsuario.id,
+                email: nuevoUsuario.email,
+                rol: nuevoUsuario.rol,
+                tipo: 'usuario',
+            });
+
+            return res.status(201).json({
+                mensaje: 'Usuario registrado correctamente. Puedes vincular la cuenta con un codigo cuando lo tengas.',
+                token,
+                expiresIn: SESSION_EXPIRES_IN,
+                usuario: {
+                    id: nuevoUsuario.id,
+                    nombre: nuevoUsuario.nombre,
+                    email: nuevoUsuario.email,
+                    rol: nuevoUsuario.rol,
+                    telefono: nuevoUsuario.telefono,
+                    colegioId: nuevoUsuario.colegio_id,
+                    colegioNombre: null,
+                    logoUrl: null,
+                }
+            });
+        }
+
         const verificacion = await obtenerCodigoValido(codigo);
 
         if (!verificacion.valido) {
-            return res.status(400).json({ error: verificacion.error || 'C??digo inv??lido' });
+            return res.status(400).json({ error: verificacion.error || 'Codigo invalido' });
         }
 
         const codigoData = verificacion.codigo;
@@ -242,20 +328,20 @@ router.post('/registro-con-codigo', async (req, res) => {
 
         const { colegioId, conductorId } = await resolverDestinoVinculacion(pool, codigoData);
 
-        const passwordHash = await bcrypt.hash(password, 10);
+        const passwordHash = await bcrypt.hash(valorPassword, 10);
 
         // Crear usuario
         const resultado = await pool.query(
-            `INSERT INTO usuarios (nombre, email, password, rol, telefono, dui, licencia, placa, colegio_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id, nombre, email, rol, colegio_id`,
-            [nombre, emailNormalizado, passwordHash, rol, telefono, dui, licencia, placa, colegioId]
+            `INSERT INTO usuarios (nombre, email, password, rol, telefono, dui, licencia, placa, colegio_id, fecha_inicio_servicio, fecha_fin_servicio)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11) RETURNING id, nombre, email, rol, colegio_id, fecha_inicio_servicio, fecha_fin_servicio`,
+            [nombre, emailNormalizado, passwordHash, rol, telefono, dui, licencia, placa, colegioId, fechaInicio || null, fechaFin || null]
         );
 
         const nuevoUsuario = resultado.rows[0];
 
         // Marcar código como usado
         await pool.query(
-            `UPDATE codigos_invitacion 
+            `UPDATE codigos_invitacion
        SET usos_actuales = usos_actuales + 1, usado_por = $1, usado_en = NOW()
        WHERE id = $2`,
             [nuevoUsuario.id, codigoData.id]
@@ -330,11 +416,21 @@ router.post('/vincular-con-codigo', authenticateToken, async (req, res) => {
         }
 
         const codigoData = verificacion.codigo;
-        const { rol, colegioId, conductorId } = await resolverDestinoVinculacion(client, codigoData);
+        const { rol, colegioId, conductorId, alumnoId } = await resolverDestinoVinculacion(client, codigoData);
         const validacionRol = validarCodigoParaUsuario(usuario, codigoData);
         if (!validacionRol.valido) {
             await client.query('ROLLBACK');
             return res.status(400).json({ error: validacionRol.error });
+        }
+
+        // Si es padre compartido, crear entrada en alumno_padres
+        if (codigoData.tipo === 'padre_compartido') {
+            await client.query(
+                `INSERT INTO alumno_padres (alumno_id, padre_id, rol)
+                 VALUES ($1, $2, 'secundario')
+                 ON CONFLICT (alumno_id, padre_id) DO NOTHING`,
+                [alumnoId, usuario.id]
+            );
         }
 
         if (codigoData.tipo === 'colegio_admin') {
@@ -382,6 +478,37 @@ router.post('/vincular-con-codigo', authenticateToken, async (req, res) => {
              RETURNING id, nombre, email, rol, telefono, colegio_id`,
             [rol, colegioId, usuario.id]
         );
+
+        // PROPAGACIÓN: Si un conductor se vincula a un colegio, sus rutas y padres también.
+        if (rol === 'conductor' && colegioId) {
+            console.log(`[VINCULACION] Propagando colegio ${colegioId} a los recursos del conductor ${usuario.id}`);
+
+            // 1. Actualizar sus rutas
+            await client.query(
+                'UPDATE rutas SET colegio_id = $1 WHERE conductor_id = $2',
+                [colegioId, usuario.id]
+            );
+
+            // 2. Actualizar a sus padres vinculados
+            const vinculacionesPadres = await client.query(
+                "SELECT entidad_id FROM vinculaciones WHERE conductor_id = $1 AND tipo = 'conductor_padre'",
+                [usuario.id]
+            );
+
+            if (vinculacionesPadres.rows.length > 0) {
+                const padresIds = vinculacionesPadres.rows.map(r => r.entidad_id);
+                await client.query(
+                    'UPDATE usuarios SET colegio_id = $1 WHERE id = ANY($2)',
+                    [colegioId, padresIds]
+                );
+
+                // También actualizar el colegio_id en la tabla de vinculaciones
+                await client.query(
+                    "UPDATE vinculaciones SET colegio_id = $1 WHERE conductor_id = $2 AND tipo = 'conductor_padre'",
+                    [colegioId, usuario.id]
+                );
+            }
+        }
 
         if (rol === 'admin') {
             await client.query(
@@ -449,16 +576,14 @@ router.post('/vincular-con-codigo', authenticateToken, async (req, res) => {
 // Lista conductores del colegio del admin
 router.get('/admin/conductores', authenticateToken, requireRole('admin'), async (req, res) => {
     try {
-        const admin = await pool.query(
+        const colegioId = req.user.colegio_id || (await pool.query(
             'SELECT colegio_id FROM usuarios WHERE id = $1',
             [req.user.id]
-        );
+        )).rows[0]?.colegio_id;
 
-        if (!admin.rows[0]?.colegio_id) {
+        if (!colegioId) {
             return res.status(400).json({ error: 'No tienes un colegio asignado' });
         }
-
-        const colegioId = admin.rows[0].colegio_id;
 
         const resultado = await pool.query(`
       SELECT u.id, u.nombre, u.email, u.telefono, u.dui, u.licencia, u.placa, u.activo, u.creado_en,
@@ -481,16 +606,14 @@ router.post('/admin/conductores/codigo', authenticateToken, requireRole('admin')
     const { maxUsos = 1, diasValidez = 7 } = req.body;
 
     try {
-        const admin = await pool.query(
+        const colegioId = req.user.colegio_id || (await pool.query(
             'SELECT colegio_id FROM usuarios WHERE id = $1',
             [req.user.id]
-        );
+        )).rows[0]?.colegio_id;
 
-        if (!admin.rows[0]?.colegio_id) {
+        if (!colegioId) {
             return res.status(400).json({ error: 'No tienes un colegio asignado' });
         }
-
-        const colegioId = admin.rows[0].colegio_id;
 
         // Generar código único
         let codigo;
@@ -538,16 +661,14 @@ router.post('/admin/conductores/directo', authenticateToken, requireRole('admin'
     }
 
     try {
-        const admin = await pool.query(
+        const colegioId = req.user.colegio_id || (await pool.query(
             'SELECT colegio_id FROM usuarios WHERE id = $1',
             [req.user.id]
-        );
+        )).rows[0]?.colegio_id;
 
-        if (!admin.rows[0]?.colegio_id) {
+        if (!colegioId) {
             return res.status(400).json({ error: 'No tienes un colegio asignado' });
         }
-
-        const colegioId = admin.rows[0].colegio_id;
 
         // Verificar que el email no exista
         const existe = await pool.query(
@@ -616,16 +737,14 @@ router.delete('/admin/conductores/:conductorId', authenticateToken, requireRole(
     const { conductorId } = req.params;
 
     try {
-        const admin = await pool.query(
+        const colegioId = req.user.colegio_id || (await pool.query(
             'SELECT colegio_id FROM usuarios WHERE id = $1',
             [req.user.id]
-        );
+        )).rows[0]?.colegio_id;
 
-        if (!admin.rows[0]?.colegio_id) {
+        if (!colegioId) {
             return res.status(400).json({ error: 'No tienes un colegio asignado' });
         }
-
-        const colegioId = admin.rows[0].colegio_id;
 
         // Verificar que el conductor pertenece a este colegio
         const conductor = await pool.query(
@@ -666,7 +785,7 @@ router.delete('/admin/conductores/:conductorId', authenticateToken, requireRole(
 router.get('/conductor/padres', authenticateToken, requireRole('conductor'), async (req, res) => {
     try {
         const resultado = await pool.query(`
-      SELECT DISTINCT 
+      SELECT DISTINCT
         u.id, u.nombre, u.email, u.telefono, u.dui, u.activo, u.creado_en,
         v.creado_en as vinculado_en
       FROM usuarios u
@@ -688,15 +807,7 @@ router.post('/conductor/padres/codigo', authenticateToken, requireRole('conducto
     const { maxUsos = 1, diasValidez = 7 } = req.body;
 
     try {
-        // Verificar que el conductor tiene al menos una ruta
-        const rutas = await pool.query(
-            'SELECT id FROM rutas WHERE conductor_id = $1 AND activa = true',
-            [req.user.id]
-        );
-
-        if (rutas.rows.length === 0) {
-            return res.status(400).json({ error: 'Debes tener al menos una ruta activa para generar códigos' });
-        }
+        console.log(`[GEN_CODE_PADRE] Conductor ${req.user.id} solicitando código`);
 
         // Generar código único
         let codigo;
@@ -710,18 +821,20 @@ router.post('/conductor/padres/codigo', authenticateToken, requireRole('conducto
         } while (existe && intentos < 10);
 
         if (existe) {
-            return res.status(500).json({ error: 'No se pudo generar un código único' });
+            return res.status(500).json({ error: 'No se pudo generar un código único, por favor intenta de nuevo' });
         }
 
-        const expiraEn = diasValidez > 0
-            ? new Date(Date.now() + diasValidez * 24 * 60 * 60 * 1000)
+        const expiraEn = Number(diasValidez) > 0
+            ? new Date(Date.now() + Number(diasValidez) * 24 * 60 * 60 * 1000)
             : null;
 
         const resultado = await pool.query(
             `INSERT INTO codigos_invitacion (codigo, tipo, entidad_id, creado_por, max_usos, expira_en)
-       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
-            [codigo, 'conductor_padre', req.user.id, req.user.id, maxUsos, expiraEn]
+             VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+            [codigo, 'conductor_padre', req.user.id, req.user.id, Number(maxUsos), expiraEn]
         );
+
+        console.log(`[GEN_CODE_PADRE] Código generado: ${codigo} para conductor ${req.user.id}`);
 
         res.status(201).json({
             mensaje: 'Código para padre generado correctamente',
@@ -730,14 +843,17 @@ router.post('/conductor/padres/codigo', authenticateToken, requireRole('conducto
         });
     } catch (error) {
         console.error('Error generando código de padre:', error);
-        res.status(500).json({ error: 'Error interno del servidor' });
+        res.status(500).json({
+            error: 'Error interno del servidor',
+            detalle: error.message
+        });
     }
 });
 
 // POST /api/vinculaciones/conductor/padres/directo
 // Conductor asigna un padre existente directamente
 router.post('/conductor/padres/directo', authenticateToken, requireRole('conductor'), async (req, res) => {
-    const { email, nombre, telefono, dui, password, rutaId } = req.body;
+    const { email, nombre, telefono, dui, password, rutaId, fechaInicio, fechaFin } = req.body;
 
     if (!email || !nombre || !password || !rutaId) {
         return res.status(400).json({ error: 'Email, nombre, contraseña y ruta son requeridos' });
@@ -775,16 +891,16 @@ router.post('/conductor/padres/directo', authenticateToken, requireRole('conduct
             }
 
             await pool.query(
-                'UPDATE usuarios SET colegio_id = $1, rol = $2 WHERE id = $3',
-                [colegioId, 'padre', existe.rows[0].id]
+                'UPDATE usuarios SET colegio_id = $1, rol = $2, fecha_inicio_servicio = $3, fecha_fin_servicio = $4 WHERE id = $5',
+                [colegioId, 'padre', fechaInicio || null, fechaFin || null, existe.rows[0].id]
             );
             padreId = existe.rows[0].id;
         } else {
             const passwordHash = await bcrypt.hash(password, 10);
             const resultado = await pool.query(
-                `INSERT INTO usuarios (nombre, email, password, rol, telefono, dui, colegio_id)
-         VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id`,
-                [nombre, email.toLowerCase(), passwordHash, 'padre', telefono, dui, colegioId]
+                `INSERT INTO usuarios (nombre, email, password, rol, telefono, dui, colegio_id, fecha_inicio_servicio, fecha_fin_servicio)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id`,
+                [nombre, email.toLowerCase(), passwordHash, 'padre', telefono, dui, colegioId, fechaInicio || null, fechaFin || null]
             );
             padreId = resultado.rows[0].id;
         }
@@ -815,7 +931,7 @@ router.delete('/conductor/padres/:padreId', authenticateToken, requireRole('cond
     try {
         // Verificar que el padre está vinculado a este conductor
         const vinculacion = await pool.query(
-            `SELECT * FROM vinculaciones 
+            `SELECT * FROM vinculaciones
        WHERE entidad_id = $1 AND conductor_id = $2 AND tipo = 'conductor_padre' AND estado = 'activo'`,
             [padreId, req.user.id]
         );
@@ -833,7 +949,7 @@ router.delete('/conductor/padres/:padreId', authenticateToken, requireRole('cond
 
         // Opcional: quitar colegio al padre si no tiene más vinculaciones
         const otrasVinculaciones = await pool.query(
-            `SELECT COUNT(*) FROM vinculaciones 
+            `SELECT COUNT(*) FROM vinculaciones
        WHERE entidad_id = $1 AND tipo = 'conductor_padre' AND estado = 'activo'`,
             [padreId]
         );
@@ -918,7 +1034,7 @@ router.get('/verificar-codigo/:codigo', async (req, res) => {
 router.get('/padre/mis-conductores', authenticateToken, requireRole('padre'), async (req, res) => {
     try {
         const resultado = await pool.query(`
-      SELECT 
+      SELECT
         u.id as conductor_id,
         u.nombre as conductor_nombre,
         u.telefono as conductor_telefono,

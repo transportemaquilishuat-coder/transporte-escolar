@@ -1,20 +1,21 @@
 const express = require('express');
 const router = express.Router();
+const ctrl = require('../controllers/pagosController');
+const { authenticateToken, requireRole } = require('../middleware/auth');
 
-const pagos = [
-    { id: 1, padre: 'Carlos García', monto: 45.00, estado: 'pendiente', mes: 'Abril 2026' },
-    { id: 2, padre: 'Ana López', monto: 45.00, estado: 'pagado', mes: 'Abril 2026' },
-    { id: 3, padre: 'Luis Martínez', monto: 45.00, estado: 'pendiente', mes: 'Abril 2026' },
-    { id: 4, padre: 'Rosa Hernández', monto: 45.00, estado: 'pagado', mes: 'Abril 2026' },
-];
+// GET /api/pagos - Listar todos los pagos (Admin/SuperAdmin)
+router.get('/', authenticateToken, requireRole('admin', 'super_admin'), ctrl.listarPagos);
 
-router.get('/', (req, res) => {
-    res.json({ pagos });
-});
+// GET /api/pagos/pendientes - Listar pagos pendientes
+router.get('/pendientes', authenticateToken, requireRole('admin', 'super_admin'), ctrl.obtenerPagosPendientes);
 
-router.get('/pendientes', (req, res) => {
-    const pendientes = pagos.filter(p => p.estado === 'pendiente');
-    res.json({ pendientes, total: pendientes.length });
-});
+// POST /api/pagos/generar-mensual - Generar cargos manualmente
+router.post('/generar-mensual', authenticateToken, requireRole('admin', 'super_admin'), ctrl.procesarGeneracionManual);
+
+// PUT /api/pagos/:id/estado - Actualizar estado de un pago (Admin)
+router.put('/:id/estado', authenticateToken, requireRole('admin', 'super_admin'), ctrl.actualizarEstadoPago);
+
+// POST /api/pagos/confirmar-pago - Padre confirma su pago realizado por Google Pay
+router.post('/confirmar-pago', authenticateToken, requireRole('padre'), ctrl.confirmarPagoPadre);
 
 module.exports = router;

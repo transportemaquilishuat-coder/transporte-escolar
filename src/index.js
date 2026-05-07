@@ -31,6 +31,12 @@ app.use(cors({
 }));
 app.use(express.json());
 
+// Inyectar IO en el request para controladores
+app.use((req, res, next) => {
+    req.io = io;
+    next();
+});
+
 // Logger de peticiones para debug
 app.use((req, res, next) => {
     console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`);
@@ -82,11 +88,14 @@ app.use('/api/pagos', require('./routes/pagos'));
 app.use('/api/asignaciones', require('./routes/asignaciones'));
 app.use('/api/admin', require('./routes/admin'));
 app.use('/api/super-admin', require('./routes/superAdmin'));
+app.use('/api/superadmin', require('./routes/superAdmin'));
 app.use('/api/notificaciones', require('./routes/notificaciones'));
 app.use('/api/padres', require('./routes/padres'));
 app.use('/api/colegios', require('./routes/colegios'));
 app.use('/api/desvios', require('./routes/desvios'));
 app.use('/api/vinculaciones', require('./routes/vinculaciones'));
+app.use('/api/avisos', require('./routes/avisos'));
+app.use('/api/programacion', require('./routes/programacion'));
 // ================================
 // 🚍 ESTADO GLOBAL EN MEMORIA
 // ================================
@@ -119,11 +128,13 @@ io.on('connection', (socket) => {
     // 🚍 Conductor envía ubicación
     socket.on('conductor:ubicacion', (datos) => {
 
-        // Guardar última ubicación global
+        // Guardar última ubicación global (solo para debug/admin si es necesario)
         ubicacionBus = {
             latitude: datos.latitude,
             longitude: datos.longitude,
             conductorId: datos.conductorId || null,
+            rutaId: datos.rutaId || null,
+            sentido: datos.sentido || null,
             activo: true,
         };
 
@@ -135,14 +146,19 @@ io.on('connection', (socket) => {
                 longitude: datos.longitude,
                 nombre: datos.nombre || 'Conductor',
                 ruta: datos.ruta || 'Sin ruta',
+                rutaId: datos.rutaId || null,
+                sentido: datos.sentido || null,
                 activo: true,
                 ultimaActualizacion: new Date().toISOString(),
             };
         }
 
-        // 📡 Emitir a TODOS
-        io.emit('bus:ubicacion', ubicacionBus);
-        // Verificar desvío y notificar
+        // 📡 Emitir SEGMENTADO (Solo a los padres de esta ruta)
+        if (datos.rutaId) {
+            io.to(`ruta:${datos.rutaId}`).emit('bus:ubicacion', ubicacionBus);
+        }
+
+        // Verificar desvío y notificar (también segmentado)
         if (datos.conductorId && datos.rutaId) {
             fetch(`${BASE_URL}/api/desvios/verificar`, {
                 method: 'POST',
@@ -157,25 +173,59 @@ io.on('connection', (socket) => {
                 .then(r => r.json())
                 .then(resultado => {
                     if (resultado.desviado) {
-                        io.emit('bus:desvio', {
+                        const payloadDesvio = {
                             conductorId: datos.conductorId,
+                            rutaId: datos.rutaId,
                             distanciaMetros: resultado.distanciaMetros,
                             mensaje: resultado.mensaje,
-                        });
+                        };
+                        // Notificar solo a la ruta y a admins
+                        io.to(`ruta:${datos.rutaId}`).emit('bus:desvio', payloadDesvio);
+                        io.emit('admin:desvio', payloadDesvio);
                         console.log(`⚠️ Desvío detectado: ${resultado.distanciaMetros}m`);
                     }
                 })
                 .catch(e => console.log('Error verificando desvío:', e));
         }
+
+        // Mantener actualizado el panel de admin global
         io.emit('admin:conductores_activos', Object.values(conductoresActivos));
 
+    });
+
+    // 📣 Evento genérico del conductor (Reportar tráfico, pinchazo, etc.)
+    socket.on('conductor:evento', (datos) => {
+        console.log(`[EVENTO] Conductor ${datos.conductorId} en ruta ${datos.rutaId}: ${datos.tipo}`);
+
+        if (datos.rutaId) {
+            // Retransmitir solo a los padres de esa ruta específica
+            io.to(`ruta:${datos.rutaId}`).emit('bus:evento', {
+                ...datos,
+                timestamp: new Date().toISOString()
+            });
+        }
     });
 
     // 🟢 Inicio de ruta
     socket.on('conductor:inicio_ruta', (datos) => {
         ubicacionBus.activo = true;
+        ubicacionBus.rutaId = datos.rutaId || ubicacionBus.rutaId || null;
+        ubicacionBus.sentido = datos.sentido || ubicacionBus.sentido || null;
 
-        io.emit('bus:inicio_ruta', datos);
+        if (datos.rutaId) {
+            io.to(`ruta:${datos.rutaId}`).emit('bus:inicio_ruta', datos);
+            pool.query(
+                `INSERT INTO eventos_ruta (ruta_id, conductor_id, tipo, descripcion)
+                 VALUES ($1, $2, 'inicio_ruta', $3)`,
+                [
+                    datos.rutaId,
+                    datos.conductorId || null,
+                    datos.sentido === 'colegio_a_casa'
+                        ? 'Ruta de devolucion iniciada'
+                        : 'Ruta de recogida iniciada',
+                ]
+            ).catch(e => console.log('Error registrando inicio de ruta:', e.message));
+        }
         console.log(`🟢 Ruta iniciada por conductor ${datos.conductorId}`);
     });
 
@@ -188,7 +238,20 @@ io.on('connection', (socket) => {
             delete conductoresActivos[datos.conductorId];
         }
 
-        io.emit('bus:fin_ruta', datos);
+        if (datos.rutaId) {
+            io.to(`ruta:${datos.rutaId}`).emit('bus:fin_ruta', datos);
+            pool.query(
+                `INSERT INTO eventos_ruta (ruta_id, conductor_id, tipo, descripcion)
+                 VALUES ($1, $2, 'fin_ruta', $3)`,
+                [
+                    datos.rutaId,
+                    datos.conductorId || null,
+                    datos.sentido === 'colegio_a_casa'
+                        ? 'Ruta de devolucion finalizada'
+                        : 'Ruta de recogida finalizada',
+                ]
+            ).catch(e => console.log('Error registrando fin de ruta:', e.message));
+        }
         io.emit('admin:conductores_activos', Object.values(conductoresActivos));
 
         console.log(`🔴 Ruta finalizada por conductor ${datos.conductorId}`);
@@ -197,6 +260,16 @@ io.on('connection', (socket) => {
     // 👨‍👩‍👧 Padre solicita ubicación
     socket.on('padre:solicitar_ubicacion', () => {
         socket.emit('bus:ubicacion', ubicacionBus);
+    });
+
+    // 👨‍👩‍👧 Padre se une a salas de sus hijos (multi-ruta)
+    socket.on('padre:unirse_rutas', (rutasIds) => {
+        if (Array.isArray(rutasIds)) {
+            rutasIds.forEach(id => {
+                socket.join(`ruta:${id}`);
+                console.log(`👨‍👩‍👧 Cliente ${socket.id} unido a sala ruta:${id}`);
+            });
+        }
     });
 
     // 🧑‍💼 Admin solicita lista activa

@@ -26,7 +26,7 @@ if (!poolConfig.port) delete poolConfig.port;
 const pool = new Pool(poolConfig);
 
 const asegurarEsquema = async () => {
-    console.log('[DB] Iniciando verificación de esquema...');
+    console.log('[DB] >>> VERSIÓN 4 - CORRECCIÓN AGRESIVA - INICIANDO <<<');
     const client = await pool.connect();
     try {
         await client.query('BEGIN');

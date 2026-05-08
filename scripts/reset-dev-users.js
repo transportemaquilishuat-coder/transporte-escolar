@@ -356,6 +356,13 @@ const resetDevUsers = async () => {
         console.log('Asegurando Alumno...');
         const alumnoId = await obtenerOCrearAlumno(client, rutaId, padre.id);
 
+        await client.query(
+            `INSERT INTO alumno_padres (alumno_id, padre_id, rol)
+             VALUES ($1, $2, 'principal')
+             ON CONFLICT (alumno_id, padre_id) DO NOTHING`,
+            [alumnoId, padre.id]
+        );
+
         await client.query('COMMIT');
 
         console.log('\n✅ Perfiles de prueba actualizados correctamente:');

@@ -83,6 +83,15 @@ router.post('/alumnos', async (req, res) => {
             [nombre, grado, ruta_id, padre_id, parada, latitude ?? null, longitude ?? null, orden]
         );
 
+        if (padre_id) {
+            await pool.query(
+                `INSERT INTO alumno_padres (alumno_id, padre_id, rol)
+                 VALUES ($1, $2, 'principal')
+                 ON CONFLICT (alumno_id, padre_id) DO NOTHING`,
+                [resultado.rows[0].id, padre_id]
+            );
+        }
+
         await sincronizarPuntoAlumno(resultado.rows[0].id);
 
         // Auto-nombrar ruta basado en la geoposición
@@ -216,6 +225,15 @@ router.put('/alumnos/:id', async (req, res) => {
                 id,
             ]
         );
+
+        if (resultado.rows[0].padre_id) {
+            await pool.query(
+                `INSERT INTO alumno_padres (alumno_id, padre_id, rol)
+                 VALUES ($1, $2, 'principal')
+                 ON CONFLICT (alumno_id, padre_id) DO NOTHING`,
+                [resultado.rows[0].id, resultado.rows[0].padre_id]
+            );
+        }
 
         await sincronizarPuntoAlumno(resultado.rows[0].id);
 

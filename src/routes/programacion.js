@@ -17,7 +17,7 @@ router.get('/mis-hijos-cambios', authenticateToken, requireRole('padre'), async 
              ORDER BY pr.fecha ASC`,
             [req.user.id]
         );
-        res.json({ programaciones: resultado.rows });
+        res.json({ programaciones: resultado.rows, cambios: resultado.rows });
     } catch (error) {
         console.error('Error obteniendo programaciones:', error);
         res.status(500).json({ error: 'Error interno del servidor' });

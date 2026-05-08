@@ -35,6 +35,43 @@ const obtenerConfiguracionUi = async () => {
     return configuracion;
 };
 
+const obtenerOCrearRutaConductor = async (conductorId) => {
+    const rutasResult = await pool.query(
+        `SELECT r.id, r.nombre, r.conductor_id AS "conductorId", u.nombre AS conductor_nombre
+         FROM rutas r
+         LEFT JOIN usuarios u ON u.id = r.conductor_id
+         WHERE r.conductor_id = $1 AND r.activa = true
+         ORDER BY r.nombre`,
+        [conductorId]
+    );
+
+    if (rutasResult.rows.length > 0) {
+        return rutasResult.rows;
+    }
+
+    const usuario = await pool.query(
+        'SELECT nombre, colegio_id FROM usuarios WHERE id = $1 AND rol = $2 AND activo = true',
+        [conductorId, 'conductor']
+    );
+
+    if (usuario.rows.length === 0) {
+        return null;
+    }
+
+    const conductor = usuario.rows[0];
+    const nuevaRuta = await pool.query(
+        `INSERT INTO rutas (nombre, conductor_id, colegio_id, activa)
+         VALUES ($1, $2, $3, true)
+         RETURNING id, nombre, conductor_id AS "conductorId"`,
+        [`Ruta de ${conductor.nombre}`, conductorId, conductor.colegio_id]
+    );
+
+    return nuevaRuta.rows.map((ruta) => ({
+        ...ruta,
+        conductor_nombre: conductor.nombre,
+    }));
+};
+
 exports.alumnosPorConductor = async (req, res) => {
     const conductorId = Number(req.params.conductorId);
 
@@ -44,17 +81,10 @@ exports.alumnosPorConductor = async (req, res) => {
 
     try {
         const configuracionUi = await obtenerConfiguracionUi();
-        const rutasResult = await pool.query(
-            `SELECT r.id, r.nombre, r.conductor_id AS "conductorId", u.nombre AS conductor_nombre
-             FROM rutas r
-             LEFT JOIN usuarios u ON u.id = r.conductor_id
-             WHERE r.conductor_id = $1 AND r.activa = true
-             ORDER BY r.nombre`,
-            [conductorId]
-        );
+        const rutas = await obtenerOCrearRutaConductor(conductorId);
 
-        if (rutasResult.rows.length === 0) {
-            return res.status(404).json({ error: 'No se encontraron rutas para este conductor' });
+        if (!rutas) {
+            return res.status(404).json({ error: 'Conductor no encontrado' });
         }
 
         const alumnosResult = await pool.query(
@@ -97,12 +127,12 @@ exports.alumnosPorConductor = async (req, res) => {
                  (pr.id IS NULL AND a.ruta_id = ANY($1::int[])) OR
                  (pr.id IS NOT NULL AND pr.ruta_id = ANY($1::int[]))
                )
-             ORDER BY a.orden, a.nombre`,
-            [rutasResult.rows.map((ruta) => ruta.id)]
+            ORDER BY a.orden, a.nombre`,
+            [rutas.map((ruta) => ruta.id)]
         );
 
         res.json({
-            rutas: rutasResult.rows.map((ruta) => ({
+            rutas: rutas.map((ruta) => ({
                 id: ruta.id,
                 nombre: ruta.nombre,
                 conductorId: ruta.conductorId,
@@ -363,6 +393,15 @@ exports.inscribirAlumnoPorConductor = async (req, res) => {
                 orden ?? null,
             ]
         );
+
+        if (padre_id) {
+            await pool.query(
+                `INSERT INTO alumno_padres (alumno_id, padre_id, rol)
+                 VALUES ($1, $2, 'principal')
+                 ON CONFLICT (alumno_id, padre_id) DO NOTHING`,
+                [resultado.rows[0].id, padre_id]
+            );
+        }
 
         await sincronizarPuntoAlumno(resultado.rows[0].id);
 

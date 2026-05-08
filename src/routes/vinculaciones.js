@@ -207,19 +207,19 @@ const resolverDestinoVinculacion = async (client, codigoData) => {
 };
 
 const tipoCodigoEsperadoPorRol = {
-    admin: 'colegio_admin',
-    conductor: 'colegio_conductor',
-    padre: 'conductor_padre',
+    admin: ['colegio_admin'],
+    conductor: ['colegio_conductor'],
+    padre: ['conductor_padre', 'padre_compartido'],
 };
 
 const validarCodigoParaUsuario = (usuario, codigoData) => {
-    const tipoEsperado = tipoCodigoEsperadoPorRol[usuario.rol];
+    const tiposEsperados = tipoCodigoEsperadoPorRol[usuario.rol];
 
-    if (!tipoEsperado) {
+    if (!tiposEsperados) {
         return { valido: false, error: 'Rol de usuario no valido para vinculacion' };
     }
 
-    if (codigoData.tipo !== tipoEsperado) {
+    if (!tiposEsperados.includes(codigoData.tipo)) {
         return {
             valido: false,
             error: `Este codigo es para ${codigoData.tipo}, pero tu cuenta es ${usuario.rol}`,
@@ -441,6 +441,15 @@ router.post('/registro-con-codigo', async (req, res) => {
        VALUES ($1, $2, $3, $4, $5, $6, 'activo')`,
             [codigoData.tipo, nuevoUsuario.id, codigoData.creado_por, colegioId, conductorId, codigoData.codigo]
         );
+
+        if (codigoData.tipo === 'padre_compartido') {
+            await pool.query(
+                `INSERT INTO alumno_padres (alumno_id, padre_id, rol)
+                 VALUES ($1, $2, 'secundario')
+                 ON CONFLICT (alumno_id, padre_id) DO NOTHING`,
+                [codigoData.entidad_id, nuevoUsuario.id]
+            );
+        }
 
         // Generar token
         const token = firmarTokenSesion({

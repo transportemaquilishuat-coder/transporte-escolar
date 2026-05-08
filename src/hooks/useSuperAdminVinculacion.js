@@ -8,6 +8,11 @@ import {
     getCodigosSuperAdmin,
     getUsuariosColegioSuperAdmin,
     resetAdminPasswordSuperAdmin,
+    impersonateColegio,
+    asignarAdminDirecto,
+    desvincularAdmin,
+    actualizarColegio,
+    cambiarEstadoColegio,
 } from '../services/vinculacionesService';
 
 export const useSuperAdminVinculacion = () => {
@@ -35,6 +40,11 @@ export const useSuperAdminVinculacion = () => {
     const listarCodigos = useCallback(() => ejecutar(getCodigosSuperAdmin), []);
     const listarUsuariosColegio = useCallback((colegioId) => ejecutar(getUsuariosColegioSuperAdmin, colegioId), []);
     const restablecerPasswordAdmin = useCallback((colegioId) => ejecutar(resetAdminPasswordSuperAdmin, colegioId), []);
+    const entrarComoAdmin = useCallback((colegioId) => ejecutar(impersonateColegio, colegioId), []);
+    const asignarAdministrador = useCallback((colegioId, email) => ejecutar(asignarAdminDirecto, colegioId, email), []);
+    const desvincularAdministrador = useCallback((colegioId) => ejecutar(desvincularAdmin, colegioId), []);
+    const editarColegio = useCallback((colegioId, datos) => ejecutar(actualizarColegio, colegioId, datos), []);
+    const toggleEstadoColegio = useCallback((colegioId, activo) => ejecutar(cambiarEstadoColegio, colegioId, activo), []);
 
     return {
         loading,
@@ -46,5 +56,10 @@ export const useSuperAdminVinculacion = () => {
         listarCodigos,
         listarUsuariosColegio,
         restablecerPasswordAdmin,
+        entrarComoAdmin,
+        asignarAdministrador,
+        desvincularAdministrador,
+        editarColegio,
+        toggleEstadoColegio,
     };
 };

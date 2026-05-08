@@ -9,6 +9,27 @@
       "android",
       "web"
     ],
+    "plugins": [
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Permite que Transporte Escolar muestre tu ubicacion y calcule rutas durante el servicio."
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Permite seleccionar fotos para completar perfiles y registros.",
+          "cameraPermission": "Permite tomar fotos para completar perfiles y registros."
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "defaultChannel": "transporte"
+        }
+      ]
+    ],
     "extra": {
       "eas": {
         "projectId": "08dab61e-7094-4e59-80a5-6f7d69c45b0e"
@@ -16,6 +37,10 @@
     },
     "android": {
       "package": "com.daniel7901.transporteescolar",
+      "versionCode": 1,
+      "blockedPermissions": [
+        "android.permission.RECORD_AUDIO"
+      ],
       "config": {
         "googleMaps": {
           "apiKey": "AIzaSyDVaVcUL_e_lO0nD29QUfOfl0u3RUUFEdM"

@@ -10,26 +10,23 @@ import {
   Modal,
   TextInput,
 } from 'react-native';
-import { HeartHandshake, KeyRound, Plus, UsersRound } from 'lucide-react-native';
-import { useConductorVinculacion } from '../../hooks/useConductorVinculacion';
+import { Plus, Trash2, UsersRound } from 'lucide-react-native';
+import { useAdminVinculacion } from '../../hooks/useAdminVinculacion';
 import { useBranding } from '../../hooks/useBranding';
 import { KIDGO_THEME } from '../../theme/kidgoTheme';
 
-export default function ConductorPadresScreen() {
-  const { loading, listarPadres, generarCodigo, vincularDirecto, eliminarPadre } = useConductorVinculacion();
+export default function AdminPadresScreen() {
+  const { loading, listarPadres, vincularPadreDirecto, eliminarPadre } = useAdminVinculacion();
   const { branding } = useBranding();
 
   const [padres, setPadres] = useState([]);
-  const [modalCodigo, setModalCodigo] = useState(false);
   const [modalDirecto, setModalDirecto] = useState(false);
-  const [codigoGenerado, setCodigoGenerado] = useState(null);
   const [nuevoPadre, setNuevoPadre] = useState({
     nombre: '',
     email: '',
     password: '',
     telefono: '',
     dui: '',
-    rutaId: '',
     fechaInicio: '',
     fechaFin: '',
   });
@@ -49,30 +46,20 @@ export default function ConductorPadresScreen() {
     }
   };
 
-  const handleGenerarCodigo = async () => {
-    try {
-      const resultado = await generarCodigo({ maxUsos: 1, diasValidez: 7 });
-      setCodigoGenerado(resultado);
-      setModalCodigo(true);
-    } catch (err) {
-      Alert.alert('Error', err.message);
-    }
-  };
-
   const handleVincularDirecto = async () => {
     try {
-      await vincularDirecto(nuevoPadre);
+      await vincularPadreDirecto(nuevoPadre);
       setModalDirecto(false);
-      setNuevoPadre({ nombre: '', email: '', password: '', telefono: '', dui: '', rutaId: '', fechaInicio: '', fechaFin: '' });
+      setNuevoPadre({ nombre: '', email: '', password: '', telefono: '', dui: '', fechaInicio: '', fechaFin: '' });
       await cargarPadres();
-      Alert.alert('Exito', 'Padre vinculado correctamente.');
+      Alert.alert('Exito', 'Padre vinculado al colegio correctamente.');
     } catch (err) {
       Alert.alert('Error', err.message);
     }
   };
 
   const handleEliminar = (padreId, nombre) => {
-    Alert.alert('Confirmar', `Deseas desvincular a ${nombre}?`, [
+    Alert.alert('Confirmar', `Deseas desvincular a ${nombre} del colegio?`, [
       { text: 'Cancelar', style: 'cancel' },
       {
         text: 'Desvincular',
@@ -101,38 +88,30 @@ export default function ConductorPadresScreen() {
             <Text style={styles.info}>{item.email}</Text>
           </View>
         </View>
-        <TouchableOpacity onPress={() => handleEliminar(item.id, item.nombre)}>
-          <Text style={styles.btnEliminar}>Eliminar</Text>
+        <TouchableOpacity style={styles.btnEliminar} onPress={() => handleEliminar(item.id, item.nombre)}>
+          <Trash2 size={14} color={KIDGO_THEME.error} strokeWidth={2.2} />
         </TouchableOpacity>
       </View>
       <Text style={styles.info}>Telefono: {item.telefono || 'Sin telefono'}</Text>
-      <Text style={styles.info}>
-        Vinculado: {item.vinculado_en ? new Date(item.vinculado_en).toLocaleDateString() : 'Sin fecha'}
-      </Text>
+      <Text style={styles.info}>Conductor: {item.conductor_nombre || 'Sin conductor asignado'}</Text>
     </View>
   );
 
   return (
     <View style={styles.container}>
       <View style={styles.hero}>
-        <Text style={styles.heroTitle}>Padres vinculados</Text>
+        <Text style={styles.heroTitle}>Padres del colegio</Text>
         <Text style={styles.heroSubtitle}>
-          El conductor crea codigos para los padres y tambien puede vincularlos manualmente, aun sin colegio ni ruta.
+          Vincula padres al colegio y revisa los que llegan desde conductores asociados.
         </Text>
       </View>
 
-      <View style={styles.botonesHeader}>
-        <TouchableOpacity style={[styles.btnPrimario, { backgroundColor: brandColor }]} onPress={handleGenerarCodigo}>
-          <KeyRound size={18} color="#fff" strokeWidth={2.3} />
-          <Text style={styles.btnText}>Generar codigo</Text>
-        </TouchableOpacity>
-        <TouchableOpacity style={styles.btnSecundario} onPress={() => setModalDirecto(true)}>
-          <Plus size={18} color={brandColor} strokeWidth={2.3} />
-          <Text style={[styles.btnTextSecundario, { color: brandColor }]}>Agregar directo</Text>
-        </TouchableOpacity>
-      </View>
+      <TouchableOpacity style={[styles.btnPrimario, { backgroundColor: brandColor }]} onPress={() => setModalDirecto(true)}>
+        <Plus size={18} color="#fff" strokeWidth={2.3} />
+        <Text style={styles.btnText}>Agregar padre</Text>
+      </TouchableOpacity>
 
-      {loading && <ActivityIndicator size="large" color={brandColor} />}
+      {loading && <ActivityIndicator size="large" color={brandColor} style={{ marginTop: 12 }} />}
 
       <FlatList
         data={padres}
@@ -141,22 +120,6 @@ export default function ConductorPadresScreen() {
         contentContainerStyle={styles.list}
         ListEmptyComponent={<Text style={styles.empty}>No hay padres vinculados.</Text>}
       />
-
-      <Modal visible={modalCodigo} transparent animationType="slide">
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <HeartHandshake size={24} color={brandColor} strokeWidth={2.2} style={{ alignSelf: 'center', marginBottom: 8 }} />
-            <Text style={styles.modalTitle}>Codigo para padre</Text>
-            <Text style={[styles.codigoText, { color: brandColor }]}>{codigoGenerado?.codigo}</Text>
-            <Text style={styles.codigoInfo}>
-              Expira: {codigoGenerado?.expira_en ? new Date(codigoGenerado.expira_en).toLocaleDateString() : 'No disponible'}
-            </Text>
-            <TouchableOpacity style={[styles.btnCerrar, { backgroundColor: brandColor }]} onPress={() => setModalCodigo(false)}>
-              <Text style={styles.btnText}>Compartir y cerrar</Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-      </Modal>
 
       <Modal visible={modalDirecto} transparent animationType="slide">
         <View style={styles.modalOverlay}>
@@ -167,12 +130,6 @@ export default function ConductorPadresScreen() {
             <TextInput style={styles.input} placeholder="Contrasena" secureTextEntry value={nuevoPadre.password} onChangeText={(t) => setNuevoPadre({ ...nuevoPadre, password: t })} placeholderTextColor={KIDGO_THEME.textSecondary} />
             <TextInput style={styles.input} placeholder="Telefono" value={nuevoPadre.telefono} onChangeText={(t) => setNuevoPadre({ ...nuevoPadre, telefono: t })} placeholderTextColor={KIDGO_THEME.textSecondary} />
             <TextInput style={styles.input} placeholder="DUI" value={nuevoPadre.dui} onChangeText={(t) => setNuevoPadre({ ...nuevoPadre, dui: t })} placeholderTextColor={KIDGO_THEME.textSecondary} />
-            <TextInput style={styles.input} placeholder="ID de ruta (opcional)" keyboardType="numeric" value={nuevoPadre.rutaId} onChangeText={(t) => setNuevoPadre({ ...nuevoPadre, rutaId: t })} placeholderTextColor={KIDGO_THEME.textSecondary} />
-            
-            <View style={{ flexDirection: 'row', gap: 10, marginBottom: 12 }}>
-              <TextInput style={[styles.input, { flex: 1, marginBottom: 0 }]} placeholder="Inicio: DD/MM" value={nuevoPadre.fechaInicio} onChangeText={(t) => setNuevoPadre({ ...nuevoPadre, fechaInicio: t })} placeholderTextColor={KIDGO_THEME.textSecondary} />
-              <TextInput style={[styles.input, { flex: 1, marginBottom: 0 }]} placeholder="Fin: DD/MM" value={nuevoPadre.fechaFin} onChangeText={(t) => setNuevoPadre({ ...nuevoPadre, fechaFin: t })} placeholderTextColor={KIDGO_THEME.textSecondary} />
-            </View>
 
             <View style={styles.modalButtons}>
               <TouchableOpacity style={styles.btnCancelar} onPress={() => setModalDirecto(false)}>
@@ -194,30 +151,16 @@ const styles = StyleSheet.create({
   hero: { marginBottom: 16 },
   heroTitle: { fontSize: 26, fontWeight: '800', color: KIDGO_THEME.text, marginBottom: 8 },
   heroSubtitle: { fontSize: 14, color: KIDGO_THEME.textSecondary, lineHeight: 20 },
-  botonesHeader: { flexDirection: 'row', marginBottom: 16, gap: 10 },
-  btnPrimario: { padding: 14, borderRadius: 14, flex: 1, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8 },
-  btnSecundario: {
-    backgroundColor: KIDGO_THEME.surface,
-    padding: 14,
-    borderRadius: 14,
-    flex: 1,
-    borderWidth: 1,
-    borderColor: KIDGO_THEME.border,
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    gap: 8,
-  },
+  btnPrimario: { padding: 14, borderRadius: 14, flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8 },
   btnText: { color: '#fff', fontWeight: '800', textAlign: 'center' },
-  btnTextSecundario: { fontWeight: '800', textAlign: 'center' },
-  list: { paddingBottom: 20 },
+  list: { paddingVertical: 16 },
   card: { backgroundColor: KIDGO_THEME.surface, padding: 16, borderRadius: 18, marginBottom: 12, borderWidth: 1, borderColor: KIDGO_THEME.border },
   cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 8, gap: 8 },
   cardTitleRow: { flexDirection: 'row', gap: 10, flex: 1 },
   avatar: { width: 42, height: 42, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   cardTitleText: { flex: 1 },
   nombre: { fontSize: 18, fontWeight: '800', flex: 1, color: KIDGO_THEME.text },
-  btnEliminar: { color: KIDGO_THEME.error, fontSize: 13, fontWeight: '800', paddingTop: 4 },
+  btnEliminar: { width: 34, height: 34, borderRadius: 17, alignItems: 'center', justifyContent: 'center', backgroundColor: '#FEF2F2', borderWidth: 1, borderColor: '#FECACA' },
   info: { color: KIDGO_THEME.textSecondary, marginBottom: 4 },
   empty: { textAlign: 'center', color: KIDGO_THEME.textSecondary, marginTop: 40 },
   modalOverlay: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(12, 20, 33, 0.45)' },
@@ -229,7 +172,4 @@ const styles = StyleSheet.create({
   btnCancelarText: { color: KIDGO_THEME.textSecondary, fontWeight: '700' },
   btnConfirmar: { padding: 14, borderRadius: 14, flex: 1, alignItems: 'center' },
   btnConfirmarText: { color: '#fff', fontWeight: '800' },
-  btnCerrar: { padding: 14, borderRadius: 14, marginTop: 16 },
-  codigoText: { fontSize: 32, fontWeight: '900', textAlign: 'center', letterSpacing: 4, marginVertical: 16 },
-  codigoInfo: { textAlign: 'center', color: KIDGO_THEME.textSecondary },
 });

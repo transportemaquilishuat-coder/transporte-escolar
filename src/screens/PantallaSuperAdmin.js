@@ -8,17 +8,20 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import {
   ShieldCheck, Building2, Users, Bus, Route, Bell,
   Settings2, ChevronRight, RefreshCw, LogOut,
-  CalendarDays, Clock3, MonitorSmartphone, Check, X, Plus, KeyRound, MessageSquare, Trash2
+  CalendarDays, Clock3, MonitorSmartphone, Check, X, Plus, KeyRound, MessageSquare, Trash2,
+  UserPlus, Edit3, Power, LogIn
 } from 'lucide-react-native';
 import {
   cancelarNotificacionesPorTipo,
   programarNotificacionDiaria,
   programarNotificacionFecha,
 } from '../services/notificaciones';
-import { obtenerToken, limpiarSesion } from '../services/session';
+import { obtenerToken, limpiarSesion, guardarSesion } from '../services/session';
 import { useSuperAdminVinculacion } from '../hooks/useSuperAdminVinculacion';
 
-const SERVIDOR = 'https://transporte-backend-production.up.railway.app';
+import { API_BASE_URL } from '../services/apiConfig';
+
+const SERVIDOR = API_BASE_URL;
 const TIPO_ALERTA_RECOGIDA = 'superadmin_alerta_recogida_5min';
 const DIAS_SEMANA = [
   { key: 0, short: 'D', label: 'Domingo' },
@@ -106,6 +109,11 @@ export default function PantallaSuperAdmin({ navigation }) {
     listarCodigos,
     listarUsuariosColegio,
     restablecerPasswordAdmin,
+    entrarComoAdmin,
+    asignarAdministrador,
+    desvincularAdministrador,
+    editarColegio,
+    toggleEstadoColegio,
   } = useSuperAdminVinculacion();
   const { width } = useWindowDimensions();
   const isTablet = width >= 720;
@@ -122,7 +130,7 @@ export default function PantallaSuperAdmin({ navigation }) {
 
   const [horaRecogida, setHoraRecogida] = useState('06:45');
   const [mensajeAlerta, setMensajeAlerta] = useState('El transporte escolar pasara en aproximadamente 5 minutos por tu punto de recogida.');
-  const [mensajesDiarios, setMensajesDiarios] = useState(Array(31).fill(''));
+  const [mensajesDiarios, setMensajesDiarios] = useState([]);
   const [mostrarEditorMensajes, setMostrarEditorMensajes] = useState(false);
   const [modoProgramacion, setModoProgramacion] = useState('mensual');
   const [diasSeleccionados, setDiasSeleccionados] = useState([1, 2, 3, 4, 5]);
@@ -150,6 +158,121 @@ export default function PantallaSuperAdmin({ navigation }) {
   const [passwordTemporal, setPasswordTemporal] = useState('');
   const [usuarioReset, setUsuarioReset] = useState(null);
 
+  const [modalEditarColegio, setModalEditarColegio] = useState(false);
+  const [colegioEditar, setColegioEditar] = useState(null);
+  const [modalAsignarAdmin, setModalAsignarAdmin] = useState(false);
+  const [emailAdminNuevo, setEmailAdminNuevo] = useState('');
+  const [colegioAsignarAdmin, setColegioAsignarAdmin] = useState(null);
+  const [loadingAccion, setLoadingAccion] = useState(false);
+
+  const handleImpersonate = async (colegio) => {
+    try {
+      setLoadingAccion(true);
+      const resultado = await entrarComoAdmin(colegio.id);
+      if (resultado.token) {
+        guardarSesion({
+          token: resultado.token,
+          usuario: resultado.usuario || { rol: 'admin', colegio_id: colegio.id, nombre: `Admin (${colegio.nombre})` },
+        });
+        Alert.alert('Exito', `Has entrado al panel de ${colegio.nombre}`, [
+          { text: 'Ir al Panel Admin', onPress: () => navigation.navigate('Admin') }
+        ]);
+      }
+    } catch (e) {
+      Alert.alert('Error', e.message || 'No se pudo realizar la suplantacion.');
+    } finally {
+      setLoadingAccion(false);
+    }
+  };
+
+  const handleToggleEstado = async (colegio) => {
+    try {
+      const nuevoEstado = !colegio.activo;
+      await toggleEstadoColegio(colegio.id, nuevoEstado);
+      await refrescarVista(true);
+      Alert.alert('Listo', `Colegio ${nuevoEstado ? 'activado' : 'desactivado'} correctamente.`);
+    } catch (e) {
+      Alert.alert('Error', e.message || 'No se pudo cambiar el estado.');
+    }
+  };
+
+  const handleAsignarAdmin = async () => {
+    if (!emailAdminNuevo.trim() || !colegioAsignarAdmin) {
+      Alert.alert('Error', 'Ingresa un correo electronico valido.');
+      return;
+    }
+
+    try {
+      setLoadingAccion(true);
+      const resultado = await asignarAdministrador(colegioAsignarAdmin.id, emailAdminNuevo.trim());
+      setModalAsignarAdmin(false);
+      setEmailAdminNuevo('');
+      await refrescarVista(true);
+      const passwordTemporal = resultado?.credenciales?.passwordTemporal;
+      Alert.alert(
+        'Exito',
+        passwordTemporal
+          ? `Administrador creado y asignado correctamente.\n\nPassword temporal: ${passwordTemporal}`
+          : 'Administrador asignado correctamente.'
+      );
+    } catch (e) {
+      Alert.alert('Error', e.message || 'No se pudo asignar el administrador.');
+    } finally {
+      setLoadingAccion(false);
+    }
+  };
+
+  const handleDesvincularAdmin = async (colegio) => {
+    const nombre = colegio?.nombre || 'este colegio';
+
+    Alert.alert(
+      'Desvincular Administrador',
+      `Se quitara el acceso administrativo actual de ${nombre}. El usuario seguira existiendo pero ya no estara vinculado como jefe de este colegio.`,
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Desvincular',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              setLoadingAccion(true);
+              await desvincularAdministrador(colegio.id);
+              await refrescarVista(true);
+              Alert.alert('Exito', 'Administrador desvinculado correctamente.');
+            } catch (e) {
+              Alert.alert('Error', e.message || 'No se pudo desvincular el administrador.');
+            } finally {
+              setLoadingAccion(false);
+            }
+          },
+        },
+      ]
+    );
+  };
+
+  const handleEditarColegio = async () => {
+    if (!colegioEditar.nombre.trim()) {
+      Alert.alert('Error', 'El nombre es requerido.');
+      return;
+    }
+
+    try {
+      setLoadingAccion(true);
+      await editarColegio(colegioEditar.id, {
+        nombre: colegioEditar.nombre,
+        plan: colegioEditar.plan,
+        dias_prueba: Number(colegioEditar.dias_prueba),
+      });
+      setModalEditarColegio(false);
+      await refrescarVista(true);
+      Alert.alert('Exito', 'Colegio actualizado correctamente.');
+    } catch (e) {
+      Alert.alert('Error', e.message || 'No se pudo actualizar el colegio.');
+    } finally {
+      setLoadingAccion(false);
+    }
+  };
+
   const token = tokenSesion;
   const authHeaders = token
     ? { Authorization: `Bearer ${token}` }
@@ -157,6 +280,15 @@ export default function PantallaSuperAdmin({ navigation }) {
 
   const mesActual = new Date().getMonth() + 1;
   const anioActual = new Date().getFullYear();
+  const obtenerDiasDelMes = (mes, anio) => new Date(anio, mes, 0).getDate();
+  const diasDelMesActual = obtenerDiasDelMes(mesActual, anioActual);
+
+  // Inicializar mensajes diarios con la cantidad correcta de días del mes
+  useEffect(() => {
+    if (mensajesDiarios.length !== diasDelMesActual) {
+      setMensajesDiarios(Array(diasDelMesActual).fill(''));
+    }
+  }, [diasDelMesActual]);
 
   const fetchSuperAdmin = async (path, options = {}) => {
     const response = await fetch(`${SERVIDOR}${path}`, {
@@ -336,7 +468,7 @@ export default function PantallaSuperAdmin({ navigation }) {
   useEffect(() => {
     const cargarMensajesDiarios = async () => {
       try {
-        const data = await fetchSuperAdmin('/api/super-admin/mensajes-diarios');
+        const data = await fetchSuperAdmin(`/api/super-admin/mensajes-diarios?mes=${mesActual}&anio=${anioActual}`);
         if (data?.mensajes && Array.isArray(data.mensajes)) {
           setMensajesDiarios(data.mensajes);
         }
@@ -346,7 +478,7 @@ export default function PantallaSuperAdmin({ navigation }) {
     };
 
     cargarMensajesDiarios();
-  }, []);
+  }, [mesActual, anioActual]);
 
   const agendaMensual = useMemo(
     () => generarAgendaMensual(horaRecogida, diasSeleccionados),
@@ -573,7 +705,7 @@ export default function PantallaSuperAdmin({ navigation }) {
         <View>
           <Text style={styles.sectionTitle}>Colegios vinculados</Text>
           <Text style={styles.colegiosSubtitle}>
-            Administra los colegios creados, revisa su estado y genera el codigo de vinculacion de cada uno.
+            Administra los colegios creados, revisa su estado y gestiona el acceso administrativo total.
           </Text>
         </View>
 
@@ -605,7 +737,7 @@ export default function PantallaSuperAdmin({ navigation }) {
         </View>
       </View>
 
-      {loadingColegios ? <ActivityIndicator size="large" color={THEME.primary} style={{ marginTop: 16 }} /> : null}
+      {(loadingColegios || loadingAccion) ? <ActivityIndicator size="large" color={THEME.primary} style={{ marginTop: 16 }} /> : null}
 
       {colegiosFiltrados.length === 0 ? (
         <View style={styles.emptyColegioCard}>
@@ -620,65 +752,103 @@ export default function PantallaSuperAdmin({ navigation }) {
         </View>
       ) : (
         colegiosFiltrados.map((item) => (
-          <View key={item.id} style={styles.colegioCard}>
+          <View key={item.id} style={[styles.colegioCard, !item.activo && { opacity: 0.8 }]}>
             <View style={styles.colegioCardHeader}>
               <View style={styles.colegioTitleBlock}>
-                <View style={[styles.colegioIcon, { backgroundColor: `${THEME.secondary}14` }]}>
-                  <Building2 size={18} color={THEME.secondary} strokeWidth={2} />
+                <View style={[styles.colegioIcon, { backgroundColor: item.activo ? `${THEME.secondary}14` : `${THEME.error}14` }]}>
+                  <Building2 size={18} color={item.activo ? THEME.secondary : THEME.error} strokeWidth={2} />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.colegioNombre}>{item.nombre}</Text>
+                  <Text style={styles.colegioNombre} numberOfLines={1} ellipsizeMode="tail">{item.nombre}</Text>
                   <Text style={styles.colegioInfo}>Plan: {item.plan || 'trial'}</Text>
                 </View>
               </View>
-              <View style={[styles.colegioEstado, { backgroundColor: item.activo ? '#E8F8EE' : '#FEECEC' }]}>
+              <TouchableOpacity
+                style={[styles.colegioEstado, { backgroundColor: item.activo ? '#E8F8EE' : '#FEECEC' }]}
+                onPress={() => handleToggleEstado(item)}
+              >
+                <Power size={14} color={item.activo ? THEME.success : THEME.error} style={{ marginRight: 6 }} />
                 <Text style={[styles.colegioEstadoText, { color: item.activo ? THEME.success : THEME.error }]}>
                   {item.activo ? 'Activo' : 'Inactivo'}
                 </Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.colegioMetadataRow}>
+              <View style={styles.colegioMetaItem}>
+                <Users size={14} color={THEME.textSecondary} />
+                <Text style={styles.colegioInfo}> {item.admin_nombre || 'Sin administrador'}</Text>
+              </View>
+              <View style={styles.colegioMetaItem}>
+                <CalendarDays size={14} color={THEME.textSecondary} />
+                <Text style={styles.colegioInfo}> {item.dias_prueba_restantes || '0'} dias rest.</Text>
               </View>
             </View>
 
-            <Text style={styles.colegioInfo}>Administrador: {item.admin_nombre || 'Sin asignar'}</Text>
-            <Text style={styles.colegioInfo}>Dias de prueba: {item.dias_prueba_restantes || 'N/A'}</Text>
-
             <View style={styles.colegioActionsRow}>
               <TouchableOpacity
-                style={[
-                  styles.colegioCodigoButton,
-                  styles.colegioActionButton,
-                  { backgroundColor: item.admin_id ? THEME.textSecondary : THEME.primary },
-                ]}
-                onPress={() => handleGenerarCodigoColegio(item)}
-                disabled={!!item.admin_id || eliminandoColegioId === item.id}
+                style={[styles.colegioActionButton, styles.btnImpersonate]}
+                onPress={() => handleImpersonate(item)}
+                disabled={!item.activo}
               >
-                <ShieldCheck size={16} color="#fff" strokeWidth={2.2} />
-                <Text style={styles.colegioCodigoButtonText}>
-                  {item.admin_id ? 'Ya tiene administrador' : 'Generar codigo admin'}
-                </Text>
+                <LogIn size={16} color="#fff" strokeWidth={2.2} />
+                <Text style={styles.colegioActionButtonText}>Entrar como Admin</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={[
-                  styles.colegioEliminarButton,
-                  eliminandoColegioId === item.id && styles.buttonDisabled,
-                ]}
+                style={[styles.colegioActionButton, styles.btnAsignar]}
+                onPress={() => {
+                  setColegioAsignarAdmin(item);
+                  setModalAsignarAdmin(true);
+                }}
+              >
+                <UserPlus size={16} color={THEME.primary} strokeWidth={2.2} />
+                <Text style={[styles.colegioActionButtonText, { color: THEME.primary }]}>Asignar</Text>
+              </TouchableOpacity>
+            </View>
+
+            <View style={styles.colegioActionsRowSecondary}>
+              <TouchableOpacity
+                style={[styles.colegioActionButtonSmall, { backgroundColor: THEME.info + '15' }]}
+                onPress={() => handleGenerarCodigoColegio(item)}
+              >
+                <KeyRound size={14} color={THEME.info} />
+                <Text style={[styles.btnSmallText, { color: THEME.info }]}>Codigo</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.colegioActionButtonSmall, { backgroundColor: THEME.warning + '15' }]}
+                onPress={() => {
+                  setColegioEditar(item);
+                  setModalEditarColegio(true);
+                }}
+              >
+                <Edit3 size={14} color={THEME.warning} />
+                <Text style={[styles.btnSmallText, { color: THEME.warning }]}>Editar</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.colegioActionButtonSmall, { backgroundColor: THEME.error + '15' }]}
+                onPress={() => handleDesvincularAdmin(item)}
+              >
+                <X size={14} color={THEME.error} />
+                <Text style={[styles.btnSmallText, { color: THEME.error }]}>Desvincular Admin</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.colegioActionButtonSmall, { backgroundColor: THEME.error + '15' }]}
                 onPress={() => handleEliminarColegio(item)}
                 disabled={eliminandoColegioId === item.id}
               >
-                {eliminandoColegioId === item.id ? (
-                  <ActivityIndicator color={THEME.error} />
-                ) : (
-                  <>
-                    <Trash2 size={16} color={THEME.error} strokeWidth={2.2} />
-                    <Text style={styles.colegioEliminarButtonText}>Eliminar</Text>
-                  </>
-                )}
+                <Trash2 size={14} color={THEME.error} />
+                <Text style={[styles.btnSmallText, { color: THEME.error }]}>Eliminar</Text>
               </TouchableOpacity>
             </View>
           </View>
         ))
       )}
 
+      {/* Modal Crear Colegio (Ya existía) */}
       <Modal visible={modalCrearColegio} transparent animationType="slide">
         <View style={styles.modalOverlay}>
           <View style={styles.modalContent}>
@@ -705,6 +875,76 @@ export default function PantallaSuperAdmin({ navigation }) {
               </TouchableOpacity>
               <TouchableOpacity style={[styles.btnConfirmar, { backgroundColor: THEME.primary }]} onPress={handleCrearColegio}>
                 <Text style={styles.btnConfirmarText}>Crear</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Modal Editar Colegio (Nuevo) */}
+      <Modal visible={modalEditarColegio} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Editar colegio</Text>
+            <Text style={styles.modalSubtitle}>Actualiza los detalles básicos del colegio.</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Nombre del colegio"
+              value={colegioEditar?.nombre || ''}
+              onChangeText={(text) => setColegioEditar({ ...colegioEditar, nombre: text })}
+              placeholderTextColor={THEME.textSecondary}
+            />
+            <TextInput
+              style={styles.input}
+              placeholder="Plan (trial, premium, etc)"
+              value={colegioEditar?.plan || ''}
+              onChangeText={(text) => setColegioEditar({ ...colegioEditar, plan: text })}
+              placeholderTextColor={THEME.textSecondary}
+            />
+            <TextInput
+              style={styles.input}
+              placeholder="Dias de prueba"
+              keyboardType="numeric"
+              value={String(colegioEditar?.dias_prueba || '0')}
+              onChangeText={(text) => setColegioEditar({ ...colegioEditar, dias_prueba: text })}
+              placeholderTextColor={THEME.textSecondary}
+            />
+            <View style={styles.modalButtons}>
+              <TouchableOpacity style={styles.btnCancelar} onPress={() => setModalEditarColegio(false)}>
+                <Text style={styles.btnCancelarText}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.btnConfirmar, { backgroundColor: THEME.primary }]} onPress={handleEditarColegio}>
+                <Text style={styles.btnConfirmarText}>Guardar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* Modal Asignar Administrador (Nuevo) */}
+      <Modal visible={modalAsignarAdmin} transparent animationType="fade">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitle}>Asignar Administrador</Text>
+            <Text style={styles.modalSubtitle}>Vincula una cuenta de correo directamente como admin de {colegioAsignarAdmin?.nombre}.</Text>
+            <TextInput
+              style={styles.input}
+              placeholder="Email del nuevo administrador"
+              value={emailAdminNuevo}
+              onChangeText={setEmailAdminNuevo}
+              autoCapitalize="none"
+              keyboardType="email-address"
+              placeholderTextColor={THEME.textSecondary}
+            />
+            <Text style={styles.schedulerHint}>
+              * Si el correo no existe, se creara un administrador con password temporal.
+            </Text>
+            <View style={styles.modalButtons}>
+              <TouchableOpacity style={styles.btnCancelar} onPress={() => setModalAsignarAdmin(false)}>
+                <Text style={styles.btnCancelarText}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity style={[styles.btnConfirmar, { backgroundColor: THEME.secondary }]} onPress={handleAsignarAdmin}>
+                <Text style={styles.btnConfirmarText}>Asignar</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -808,7 +1048,7 @@ export default function PantallaSuperAdmin({ navigation }) {
                   <View style={{ flex: 1 }}>
                     <Text style={styles.usuarioCollegeName}>{colegio.nombre}</Text>
                     <Text style={styles.usuarioCollegeMeta}>
-                      {colegio.plan || 'trial'} · {colegio.admin_nombre || 'Sin administrador'}
+                      {colegio.admin_nombre || 'Sin administrador'}
                     </Text>
                   </View>
                   <ChevronRight size={18} color={isSelected ? THEME.secondary : THEME.textSecondary} strokeWidth={2} />
@@ -953,14 +1193,16 @@ export default function PantallaSuperAdmin({ navigation }) {
           <View style={[styles.modalContent, { maxHeight: '90%' }]}>
             <Text style={styles.modalTitle}>Mensajes diarios del mes</Text>
             <Text style={styles.modalSubtitle}>
-              Ingresa un mensaje personalizado para cada dia del mes (1-31).
+              Ingresa un mensaje personalizado para cada dia del mes ({diasDelMesActual} dias para {mesActual}/{anioActual}).
               Deja en blanco los dias que no quieras usar.
             </Text>
 
             <ScrollView style={styles.mensajesDiariosContainer} showsVerticalScrollIndicator={false}>
               {mensajesDiarios.map((mensaje, index) => (
-                <View key={index} style={styles.mensajeDiaRow}>
-                  <Text style={styles.mensajeDiaLabel}>Dia {index + 1}:</Text>
+                <View key={index} style={[styles.mensajeDiaRow, index + 1 > diasDelMesActual && styles.mensajeDiaRowDisabled]}>
+                  <Text style={[styles.mensajeDiaLabel, index + 1 > diasDelMesActual && styles.mensajeDiaLabelDisabled]}>
+                    Dia {index + 1}{index + 1 > diasDelMesActual ? ' (no existe)' : ''}:
+                  </Text>
                   <TextInput
                     style={[styles.input, styles.mensajeDiaInput]}
                     value={mensaje}
@@ -969,7 +1211,7 @@ export default function PantallaSuperAdmin({ navigation }) {
                       nuevos[index] = text;
                       setMensajesDiarios(nuevos);
                     }}
-                    placeholder={`Mensaje para el dia ${index + 1}`}
+                    placeholder={index + 1 <= diasDelMesActual ? `Mensaje para el dia ${index + 1}` : `Dia ${index + 1} no existe en este mes`}
                     placeholderTextColor={THEME.textSecondary}
                     multiline
                   />
@@ -990,7 +1232,246 @@ export default function PantallaSuperAdmin({ navigation }) {
                   try {
                     await fetchSuperAdmin('/api/super-admin/mensajes-diarios', {
                       method: 'PUT',
-                      body: JSON.stringify({ mensajes: mensajesDiarios }),
+                      body: JSON.stringify({ mensajes: mensajesDiarios, mes: mesActual, anio: anioActual }),
+                    });
+                    Alert.alert('Guardado', 'Los mensajes diarios se han guardado correctamente.');
+                    setMostrarEditorMensajes(false);
+                  } catch (e) {
+                    Alert.alert('Error', 'No se pudieron guardar los mensajes.');
+                  }
+                }}
+              >
+                <Text style={styles.btnConfirmarText}>Guardar</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
+    </View>
+  );
+
+  const renderPestanaAnuncios = () => (
+    <View style={styles.anunciosSection}>
+      <View style={styles.anunciosHeader}>
+        <View style={styles.schedulerTitleWrap}>
+          <CalendarDays size={18} color={THEME.primary} strokeWidth={2} />
+          <Text style={styles.sectionTitle}>Programacion de anuncios</Text>
+        </View>
+        <View style={styles.webBadge}>
+          <MonitorSmartphone size={14} color={THEME.info} strokeWidth={2} />
+          <Text style={styles.webBadgeText}>{Platform.OS === 'web' ? 'Web responsive' : 'Movil + web'}</Text>
+        </View>
+      </View>
+
+      <View style={[styles.anunciosGrid, isDesktop && styles.anunciosGridDesktop]}>
+        <View style={[styles.schedulerCard, isDesktop && styles.anunciosMainCard]}>
+          <Text style={styles.schedulerHint}>
+            Configura el mensaje con una hora base de referencia. Hoy esta programacion genera alertas por horario; la activacion dinamica por cercania al punto se completara con el flujo operativo de ruta.
+          </Text>
+
+          <View style={styles.quickInfoRow}>
+            <View style={styles.quickInfoChip}>
+              <Clock3 size={14} color={THEME.warning} strokeWidth={2} />
+              <Text style={styles.quickInfoText}>Alerta: {horaAlerta}</Text>
+            </View>
+            <View style={styles.quickInfoChip}>
+              <Bell size={14} color={THEME.secondary} strokeWidth={2} />
+              <Text style={styles.quickInfoText}>Hora base: {horaRecogida}</Text>
+            </View>
+          </View>
+
+          <Text style={styles.inputLabel}>Hora base de recogida</Text>
+          <TextInput
+            style={styles.input}
+            value={horaRecogida}
+            onChangeText={setHoraRecogida}
+            placeholder="06:45"
+            placeholderTextColor={THEME.textSecondary}
+          />
+
+          <Text style={styles.inputLabel}>Mensaje de alerta</Text>
+          <TextInput
+            style={[styles.input, styles.textArea]}
+            value={mensajeAlerta}
+            onChangeText={setMensajeAlerta}
+            multiline
+            placeholder="Escribe el mensaje que recibiran los padres"
+            placeholderTextColor={THEME.textSecondary}
+          />
+
+          <TouchableOpacity
+            style={styles.secondaryAction}
+            onPress={() => setMostrarEditorMensajes(true)}
+          >
+            <MessageSquare size={16} color={THEME.primary} strokeWidth={2.3} />
+            <Text style={styles.secondaryActionText}>
+              Programar mensajes diarios ({mensajesDiarios.filter(m => m.trim()).length}/31)
+            </Text>
+          </TouchableOpacity>
+
+          <Text style={styles.inputLabel}>Modo de programacion</Text>
+          <View style={styles.modeRow}>
+            {[
+              { key: 'diaria', label: 'Diaria' },
+              { key: 'mensual', label: 'Mes actual' },
+            ].map((modo) => (
+              <TouchableOpacity
+                key={modo.key}
+                style={[
+                  styles.modeButton,
+                  modoProgramacion === modo.key && styles.modeButtonActive,
+                ]}
+                onPress={() => setModoProgramacion(modo.key)}
+              >
+                <Text
+                  style={[
+                    styles.modeButtonText,
+                    modoProgramacion === modo.key && styles.modeButtonTextActive,
+                  ]}
+                >
+                  {modo.label}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          <Text style={styles.inputLabel}>Dias del mes a considerar</Text>
+          <View style={styles.daysRow}>
+            {DIAS_SEMANA.map((dia) => {
+              const activo = diasSeleccionados.includes(dia.key);
+              return (
+                <TouchableOpacity
+                  key={dia.key}
+                  style={[styles.dayChip, activo && styles.dayChipActive]}
+                  onPress={() => alternarDia(dia.key)}
+                >
+                  <Text style={[styles.dayChipText, activo && styles.dayChipTextActive]}>
+                    {dia.short}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+
+          <View style={styles.actionButtonsColumn}>
+            <TouchableOpacity
+              style={[styles.primaryAction, programando && styles.buttonDisabled]}
+              onPress={modoProgramacion === 'diaria' ? programarAlertaDiaria : programarMesActual}
+              disabled={programando}
+            >
+              {programando ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <>
+                  <Check size={16} color="#fff" strokeWidth={2.4} />
+                  <Text style={styles.primaryActionText}>
+                    {modoProgramacion === 'diaria' ? 'Programar alerta diaria' : 'Programar mes actual'}
+                  </Text>
+                </>
+              )}
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.secondaryAction, programando && styles.buttonDisabled]}
+              onPress={limpiarProgramacion}
+              disabled={programando}
+            >
+              <X size={16} color={THEME.error} strokeWidth={2.3} />
+              <Text style={styles.secondaryActionText}>Limpiar programacion</Text>
+            </TouchableOpacity>
+          </View>
+
+          {estadoProgramacion ? (
+            <View style={styles.statusNote}>
+              <Text style={styles.statusNoteText}>{estadoProgramacion}</Text>
+            </View>
+          ) : null}
+        </View>
+
+        <View style={[styles.schedulerCard, isDesktop && styles.anunciosPreviewCard]}>
+          <Text style={styles.sectionTitle}>Vista previa del mes</Text>
+          <Text style={styles.schedulerHint}>
+            {agendaServidor.length > 0
+              ? `${agendaServidor.length} alertas guardadas en backend para el mes actual.`
+              : `${agendaMensual.length} alertas calculadas localmente para el mes actual usando los dias seleccionados.`}
+          </Text>
+
+          {(agendaServidor.length > 0 ? agendaServidor.length : agendaMensual.length) === 0 ? (
+            <View style={styles.emptyAgenda}>
+              <CalendarDays size={26} color={THEME.border} strokeWidth={1.8} />
+              <Text style={styles.emptyAgendaText}>No hay fechas validas para programar.</Text>
+            </View>
+          ) : (
+            (agendaServidor.length > 0
+              ? agendaServidor.slice(0, 10).map((item) => ({
+                id: item.id,
+                etiqueta: formatearFecha(new Date(item.fecha_programada)),
+                horaAlerta: new Date(item.fecha_programada).toLocaleTimeString('es-SV', {
+                  hour: '2-digit',
+                  minute: '2-digit',
+                }),
+              }))
+              : agendaMensual.slice(0, 10)
+            ).map((item) => (
+              <View key={item.id} style={styles.agendaRow}>
+                <View style={styles.agendaDate}>
+                  <Text style={styles.agendaDateText}>{item.etiqueta}</Text>
+                </View>
+                <View style={styles.agendaTime}>
+                  <Clock3 size={14} color={THEME.warning} strokeWidth={2} />
+                  <Text style={styles.agendaTimeText}>{item.horaAlerta}</Text>
+                </View>
+              </View>
+            ))
+          )}
+        </View>
+      </View>
+
+      <Modal visible={mostrarEditorMensajes} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalContent, { maxHeight: '90%' }]}>
+            <Text style={styles.modalTitle}>Mensajes diarios del mes</Text>
+            <Text style={styles.modalSubtitle}>
+              Ingresa un mensaje personalizado para cada dia del mes ({diasDelMesActual} dias para {mesActual}/{anioActual}).
+              Deja en blanco los dias que no quieras usar.
+            </Text>
+
+            <ScrollView style={styles.mensajesDiariosContainer} showsVerticalScrollIndicator={false}>
+              {mensajesDiarios.map((mensaje, index) => (
+                <View key={index} style={[styles.mensajeDiaRow, index + 1 > diasDelMesActual && styles.mensajeDiaRowDisabled]}>
+                  <Text style={[styles.mensajeDiaLabel, index + 1 > diasDelMesActual && styles.mensajeDiaLabelDisabled]}>
+                    Dia {index + 1}{index + 1 > diasDelMesActual ? ' (no existe)' : ''}:
+                  </Text>
+                  <TextInput
+                    style={[styles.input, styles.mensajeDiaInput]}
+                    value={mensaje}
+                    onChangeText={(text) => {
+                      const nuevos = [...mensajesDiarios];
+                      nuevos[index] = text;
+                      setMensajesDiarios(nuevos);
+                    }}
+                    placeholder={index + 1 <= diasDelMesActual ? `Mensaje para el dia ${index + 1}` : `Dia ${index + 1} no existe en este mes`}
+                    placeholderTextColor={THEME.textSecondary}
+                    multiline
+                  />
+                </View>
+              ))}
+            </ScrollView>
+
+            <View style={styles.modalButtons}>
+              <TouchableOpacity
+                style={styles.btnCancelar}
+                onPress={() => setMostrarEditorMensajes(false)}
+              >
+                <Text style={styles.btnCancelarText}>Cancelar</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.btnConfirmar, { backgroundColor: THEME.primary }]}
+                onPress={async () => {
+                  try {
+                    await fetchSuperAdmin('/api/super-admin/mensajes-diarios', {
+                      method: 'PUT',
+                      body: JSON.stringify({ mensajes: mensajesDiarios, mes: mesActual, anio: anioActual }),
                     });
                     Alert.alert('Guardado', 'Los mensajes diarios se han guardado correctamente.');
                     setMostrarEditorMensajes(false);
@@ -1011,7 +1492,7 @@ export default function PantallaSuperAdmin({ navigation }) {
   const modulos = [
     {
       title: 'Instancia principal',
-      subtitle: 'kidGo',
+      subtitle: 'KidsGo!',
       meta: `${rutas.length} rutas activas registradas`,
       status: 'Operativa',
       statusColor: THEME.success,
@@ -1024,18 +1505,11 @@ export default function PantallaSuperAdmin({ navigation }) {
       statusColor: mostrarNumeroConductor ? THEME.info : THEME.warning,
     },
     {
-      title: 'Alertas de recogida',
-      subtitle: 'Programacion central',
-      meta: `Aviso previo configurado para las ${horaAlerta}`,
-      status: Platform.OS === 'web' ? 'Panel web listo' : 'Listo para movil',
-      statusColor: Platform.OS === 'web' ? THEME.info : THEME.success,
-    },
-    {
-      title: 'Calidad de datos',
-      subtitle: 'Modelo de alumnos',
+      title: 'Sincronizacion GPS',
+      subtitle: 'Calidad de datos',
       meta: `${alumnosInactivos} alumnos inactivos registrados`,
-      status: 'Sincronizacion GPS en desarrollo',
-      statusColor: THEME.accent,
+      status: 'En desarrollo',
+      statusColor: THEME.info,
     },
   ];
 
@@ -1256,6 +1730,12 @@ export default function PantallaSuperAdmin({ navigation }) {
                 <Text style={[styles.tabSwitcherText, seccionActiva === 'colegios' && styles.tabSwitcherTextActive]}>Colegios</Text>
               </TouchableOpacity>
               <TouchableOpacity
+                style={[styles.tabSwitcherButton, seccionActiva === 'anuncios' && styles.tabSwitcherButtonActive]}
+                onPress={() => setSeccionActiva('anuncios')}
+              >
+                <Text style={[styles.tabSwitcherText, seccionActiva === 'anuncios' && styles.tabSwitcherTextActive]}>Anuncios</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
                 style={[styles.tabSwitcherButton, seccionActiva === 'usuarios' && styles.tabSwitcherButtonActive]}
                 onPress={() => setSeccionActiva('usuarios')}
               >
@@ -1332,7 +1812,7 @@ export default function PantallaSuperAdmin({ navigation }) {
                               <View style={{ flex: 1 }}>
                                 <Text style={styles.resumenColegiosNombre}>{colegio.nombre}</Text>
                                 <Text style={styles.resumenColegiosMeta}>
-                                  {colegio.plan || 'trial'} · {colegio.admin_nombre || 'Sin administrador'}
+                                  {colegio.admin_nombre || 'Sin administrador'}
                                 </Text>
                               </View>
                             </View>
@@ -1362,181 +1842,7 @@ export default function PantallaSuperAdmin({ navigation }) {
                     ))}
                   </View>
 
-                  <View style={[styles.sideColumn, isDesktop && styles.sideColumnDesktop]}>
-                    <View style={styles.schedulerCard}>
-                      <View style={styles.schedulerHeader}>
-                        <View style={styles.schedulerTitleWrap}>
-                          <CalendarDays size={18} color={THEME.primary} strokeWidth={2} />
-                          <Text style={styles.sectionTitle}>Alertas de recogida</Text>
-                        </View>
-                        <View style={styles.webBadge}>
-                          <MonitorSmartphone size={14} color={THEME.info} strokeWidth={2} />
-                          <Text style={styles.webBadgeText}>{Platform.OS === 'web' ? 'Web responsive' : 'Movil + web'}</Text>
-                        </View>
-                      </View>
 
-                      <Text style={styles.schedulerHint}>
-                        Configura el mensaje con una hora base de referencia. Hoy esta programacion genera alertas por horario; la activacion dinamica por cercania al punto se completara con el flujo operativo de ruta.
-                      </Text>
-
-                      <View style={styles.quickInfoRow}>
-                        <View style={styles.quickInfoChip}>
-                          <Clock3 size={14} color={THEME.warning} strokeWidth={2} />
-                          <Text style={styles.quickInfoText}>Alerta: {horaAlerta}</Text>
-                        </View>
-                        <View style={styles.quickInfoChip}>
-                          <Bell size={14} color={THEME.secondary} strokeWidth={2} />
-                          <Text style={styles.quickInfoText}>Hora base: {horaRecogida}</Text>
-                        </View>
-                      </View>
-
-                      <Text style={styles.inputLabel}>Hora base de recogida</Text>
-                      <TextInput
-                        style={styles.input}
-                        value={horaRecogida}
-                        onChangeText={setHoraRecogida}
-                        placeholder="06:45"
-                        placeholderTextColor={THEME.textSecondary}
-                      />
-
-                      <Text style={styles.inputLabel}>Mensaje de alerta</Text>
-                      <TextInput
-                        style={[styles.input, styles.textArea]}
-                        value={mensajeAlerta}
-                        onChangeText={setMensajeAlerta}
-                        multiline
-                        placeholder="Escribe el mensaje que recibirán los padres"
-                        placeholderTextColor={THEME.textSecondary}
-                      />
-
-                      <TouchableOpacity
-                        style={styles.secondaryAction}
-                        onPress={() => setMostrarEditorMensajes(true)}
-                      >
-                        <MessageSquare size={16} color={THEME.primary} strokeWidth={2.3} />
-                        <Text style={styles.secondaryActionText}>
-                          Programar mensajes diarios ({mensajesDiarios.filter(m => m.trim()).length}/31)
-                        </Text>
-                      </TouchableOpacity>
-
-                      <Text style={styles.inputLabel}>Modo de programacion</Text>
-                      <View style={styles.modeRow}>
-                        {[
-                          { key: 'diaria', label: 'Diaria' },
-                          { key: 'mensual', label: 'Mes actual' },
-                        ].map((modo) => (
-                          <TouchableOpacity
-                            key={modo.key}
-                            style={[
-                              styles.modeButton,
-                              modoProgramacion === modo.key && styles.modeButtonActive,
-                            ]}
-                            onPress={() => setModoProgramacion(modo.key)}
-                          >
-                            <Text
-                              style={[
-                                styles.modeButtonText,
-                                modoProgramacion === modo.key && styles.modeButtonTextActive,
-                              ]}
-                            >
-                              {modo.label}
-                            </Text>
-                          </TouchableOpacity>
-                        ))}
-                      </View>
-
-                      <Text style={styles.inputLabel}>Dias del mes a considerar</Text>
-                      <View style={styles.daysRow}>
-                        {DIAS_SEMANA.map((dia) => {
-                          const activo = diasSeleccionados.includes(dia.key);
-                          return (
-                            <TouchableOpacity
-                              key={dia.key}
-                              style={[styles.dayChip, activo && styles.dayChipActive]}
-                              onPress={() => alternarDia(dia.key)}
-                            >
-                              <Text style={[styles.dayChipText, activo && styles.dayChipTextActive]}>
-                                {dia.short}
-                              </Text>
-                            </TouchableOpacity>
-                          );
-                        })}
-                      </View>
-
-                      <View style={styles.actionButtonsColumn}>
-                        <TouchableOpacity
-                          style={[styles.primaryAction, programando && styles.buttonDisabled]}
-                          onPress={modoProgramacion === 'diaria' ? programarAlertaDiaria : programarMesActual}
-                          disabled={programando}
-                        >
-                          {programando ? (
-                            <ActivityIndicator color="#fff" />
-                          ) : (
-                            <>
-                              <Check size={16} color="#fff" strokeWidth={2.4} />
-                              <Text style={styles.primaryActionText}>
-                                {modoProgramacion === 'diaria' ? 'Programar alerta diaria' : 'Programar mes actual'}
-                              </Text>
-                            </>
-                          )}
-                        </TouchableOpacity>
-
-                        <TouchableOpacity
-                          style={[styles.secondaryAction, programando && styles.buttonDisabled]}
-                          onPress={limpiarProgramacion}
-                          disabled={programando}
-                        >
-                          <X size={16} color={THEME.error} strokeWidth={2.3} />
-                          <Text style={styles.secondaryActionText}>Limpiar programacion</Text>
-                        </TouchableOpacity>
-                      </View>
-
-                      {estadoProgramacion ? (
-                        <View style={styles.statusNote}>
-                          <Text style={styles.statusNoteText}>{estadoProgramacion}</Text>
-                        </View>
-                      ) : null}
-
-                    </View>
-
-                    <View style={styles.schedulerCard}>
-                      <Text style={styles.sectionTitle}>Vista previa del mes</Text>
-                      <Text style={styles.schedulerHint}>
-                        {agendaServidor.length > 0
-                          ? `${agendaServidor.length} alertas guardadas en backend para el mes actual.`
-                          : `${agendaMensual.length} alertas calculadas localmente para el mes actual usando los dias seleccionados.`}
-                      </Text>
-
-                      {(agendaServidor.length > 0 ? agendaServidor.length : agendaMensual.length) === 0 ? (
-                        <View style={styles.emptyAgenda}>
-                          <CalendarDays size={26} color={THEME.border} strokeWidth={1.8} />
-                          <Text style={styles.emptyAgendaText}>No hay fechas validas para programar.</Text>
-                        </View>
-                      ) : (
-                        (agendaServidor.length > 0
-                          ? agendaServidor.slice(0, 10).map((item) => ({
-                            id: item.id,
-                            etiqueta: formatearFecha(new Date(item.fecha_programada)),
-                            horaAlerta: new Date(item.fecha_programada).toLocaleTimeString('es-SV', {
-                              hour: '2-digit',
-                              minute: '2-digit',
-                            }),
-                          }))
-                          : agendaMensual.slice(0, 10)
-                        ).map((item) => (
-                          <View key={item.id} style={styles.agendaRow}>
-                            <View style={styles.agendaDate}>
-                              <Text style={styles.agendaDateText}>{item.etiqueta}</Text>
-                            </View>
-                            <View style={styles.agendaTime}>
-                              <Clock3 size={14} color={THEME.warning} strokeWidth={2} />
-                              <Text style={styles.agendaTimeText}>{item.horaAlerta}</Text>
-                            </View>
-                          </View>
-                        ))
-                      )}
-                    </View>
-                  </View>
                 </View>
 
                 <Text style={styles.sectionTitle}>Acciones globales</Text>
@@ -1547,6 +1853,17 @@ export default function PantallaSuperAdmin({ navigation }) {
                   <View style={styles.actionText}>
                     <Text style={styles.actionTitle}>Abrir colegios</Text>
                     <Text style={styles.actionSubtitle}>Cambia a la pestaña donde puedes ver los colegios y generar codigos de administrador.</Text>
+                  </View>
+                  <ChevronRight size={18} color={THEME.textSecondary} strokeWidth={2} />
+                </TouchableOpacity>
+
+                <TouchableOpacity style={styles.actionCard} onPress={() => setSeccionActiva('anuncios')}>
+                  <View style={styles.actionIcon}>
+                    <Bell size={20} color={THEME.warning} strokeWidth={2} />
+                  </View>
+                  <View style={styles.actionText}>
+                    <Text style={styles.actionTitle}>Abrir anuncios</Text>
+                    <Text style={styles.actionSubtitle}>Cambia a la pestaña donde se programa la comunicacion y las alertas de recogida.</Text>
                   </View>
                   <ChevronRight size={18} color={THEME.textSecondary} strokeWidth={2} />
                 </TouchableOpacity>
@@ -1590,6 +1907,8 @@ export default function PantallaSuperAdmin({ navigation }) {
               </>
             ) : seccionActiva === 'colegios' ? (
               renderPestanaColegios()
+            ) : seccionActiva === 'anuncios' ? (
+              renderPestanaAnuncios()
             ) : (
               renderPestanaUsuarios()
             )}
@@ -1616,9 +1935,9 @@ const styles = StyleSheet.create({
   },
   header: {
     backgroundColor: THEME.primaryDark,
-    paddingTop: 48,
+    paddingTop: 28,
     paddingHorizontal: 18,
-    paddingBottom: 22,
+    paddingBottom: 12,
   },
   headerInner: {
     width: '100%',
@@ -1629,19 +1948,19 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 18,
+    marginBottom: 8,
   },
   logoBadge: {
-    width: 46,
-    height: 46,
-    borderRadius: 14,
+    width: 38,
+    height: 38,
+    borderRadius: 12,
     backgroundColor: 'rgba(255,255,255,0.12)',
     justifyContent: 'center',
     alignItems: 'center',
   },
   logoutButton: {
-    width: 42,
-    height: 42,
+    width: 38,
+    height: 38,
     borderRadius: 12,
     backgroundColor: 'rgba(255,255,255,0.12)',
     justifyContent: 'center',
@@ -1653,18 +1972,18 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     textTransform: 'uppercase',
     letterSpacing: 0.8,
-    marginBottom: 6,
+    marginBottom: 3,
   },
   headerTitle: {
     color: '#fff',
-    fontSize: 24,
+    fontSize: 19,
     fontWeight: '800',
-    marginBottom: 8,
+    marginBottom: 4,
   },
   headerSubtitle: {
     color: 'rgba(255,255,255,0.78)',
-    fontSize: 14,
-    lineHeight: 20,
+    fontSize: 12,
+    lineHeight: 16,
     fontWeight: '500',
   },
   content: { flex: 1 },
@@ -1699,6 +2018,7 @@ const styles = StyleSheet.create({
   },
   tabSwitcher: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 8,
     marginBottom: 14,
     padding: 4,
@@ -1709,6 +2029,7 @@ const styles = StyleSheet.create({
   },
   tabSwitcherButton: {
     flex: 1,
+    minWidth: 74,
     paddingVertical: 10,
     borderRadius: 12,
     alignItems: 'center',
@@ -2259,6 +2580,35 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     fontWeight: '500',
   },
+  anunciosSection: {
+    gap: 14,
+  },
+  anunciosHeader: {
+    backgroundColor: THEME.surface,
+    borderRadius: 20,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: THEME.border,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 12,
+    flexWrap: 'wrap',
+  },
+  anunciosGrid: {
+    gap: 14,
+  },
+  anunciosGridDesktop: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 16,
+  },
+  anunciosMainCard: {
+    flex: 1.1,
+  },
+  anunciosPreviewCard: {
+    flex: 0.9,
+  },
   usuariosSection: {
     gap: 12,
   },
@@ -2570,6 +2920,13 @@ const styles = StyleSheet.create({
     minHeight: 60,
     textAlignVertical: 'top',
   },
+  mensajeDiaRowDisabled: {
+    opacity: 0.4,
+  },
+  mensajeDiaLabelDisabled: {
+    color: THEME.textSecondary,
+    textDecorationLine: 'line-through',
+  },
   colegiosSection: {
     gap: 12,
   },
@@ -2771,22 +3128,68 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   colegioEliminarButton: {
-    minWidth: 116,
-    flexDirection: 'row',
+    width: 38,
+    height: 38,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    borderRadius: 14,
+    borderRadius: 19,
     borderWidth: 1,
     borderColor: '#FECACA',
     backgroundColor: '#FEF2F2',
   },
-  colegioEliminarButtonText: {
-    color: THEME.error,
+  colegioMetadataRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+    marginVertical: 4,
+  },
+  colegioMetaItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  btnImpersonate: {
+    backgroundColor: THEME.secondary,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderRadius: 12,
+    paddingVertical: 12,
+  },
+  btnAsignar: {
+    backgroundColor: THEME.background,
+    borderWidth: 1,
+    borderColor: THEME.border,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    borderRadius: 12,
+    paddingVertical: 12,
+  },
+  colegioActionButtonText: {
+    color: '#fff',
     fontWeight: '800',
-    fontSize: 14,
+    fontSize: 13,
+  },
+  colegioActionsRowSecondary: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 4,
+    justifyContent: 'flex-start',
+  },
+  colegioActionButtonSmall: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  btnSmallText: {
+    fontSize: 11,
+    fontWeight: '700',
   },
   emptyColegioCard: {
     backgroundColor: THEME.surface,

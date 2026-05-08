@@ -1,8 +1,7 @@
 // src/services/api.js
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { obtenerToken } from './session';
-
-const API_URL = 'https://transporte-backend-production.up.railway.app/api';
+import { API_URL } from './apiConfig';
 
 async function fetchWithAuth(endpoint, options = {}) {
     const tokenMemoria = obtenerToken();
@@ -38,13 +37,36 @@ async function fetchWithAuth(endpoint, options = {}) {
     return data;
 }
 
-export const vincularConCodigo = async (codigo, token) => {
+export const vincularConCodigo = async (codigo, token, datos = {}) => {
     return fetchWithAuth('/vinculaciones/vincular-con-codigo', {
         method: 'POST',
-        body: JSON.stringify({ codigo }),
+        body: JSON.stringify({ codigo: String(codigo || '').trim().toUpperCase(), ...datos }),
         headers: token
             ? { Authorization: `Bearer ${token}` }
             : {},
+    });
+};
+
+export const generarInvitacionPadre = async (alumnoId) => {
+    return fetchWithAuth(`/padres/hijos/${alumnoId}/generar-invitacion`, {
+        method: 'POST',
+    });
+};
+
+export const obtenerCambiosProgramados = async () => {
+    return fetchWithAuth('/programacion/mis-hijos-cambios');
+};
+
+export const crearCambioProgramado = async (datos) => {
+    return fetchWithAuth('/programacion', {
+        method: 'POST',
+        body: JSON.stringify(datos),
+    });
+};
+
+export const eliminarCambioProgramado = async (id) => {
+    return fetchWithAuth(`/programacion/${id}`, {
+        method: 'DELETE',
     });
 };
 

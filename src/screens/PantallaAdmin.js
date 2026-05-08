@@ -1,9 +1,9 @@
 import socket from '../config/socket';
 import { useState, useEffect, useRef } from 'react';
 import {
-  View, Text, StyleSheet, TouchableOpacity,
-  ScrollView, ActivityIndicator, Switch, Modal,
-  TextInput, Alert, Dimensions, StatusBar, Image,
+    View, Text, StyleSheet, TouchableOpacity,
+    ScrollView, ActivityIndicator, Switch, Modal,
+    TextInput, Alert, StatusBar, Image,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import MapView, { Marker, PROVIDER_GOOGLE } from '../components/MapaSeguro';
@@ -15,10 +15,12 @@ import {
     Bell, Activity, Route, School
 } from 'lucide-react-native';
 import { useBranding } from '../hooks/useBranding';
-import { limpiarSesion, obtenerToken } from '../services/session';
+import { limpiarSesion, obtenerToken, obtenerUsuario } from '../services/session';
+import { desvincularConductor } from '../services/vinculacionesService';
 
-const SERVIDOR = 'https://transporte-backend-production.up.railway.app';
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+import { API_BASE_URL } from '../services/apiConfig';
+
+const SERVIDOR = API_BASE_URL;
 
 // Tema 
 const THEME = {
@@ -51,6 +53,7 @@ export default function PantallaAdmin({ navigation }) {
     const [alumnos, setAlumnos] = useState([]);
     const [conductores, setConductores] = useState([]);
     const [configuracion, setConfiguracion] = useState([]);
+    const [usuario] = useState(obtenerUsuario());
 
 
     // UI
@@ -62,6 +65,7 @@ export default function PantallaAdmin({ navigation }) {
     const [schoolName, setSchoolName] = useState('');
     const [modalLogo, setModalLogo] = useState(false);
     const [inputLogoUrl, setInputLogoUrl] = useState('');
+    const [eliminandoConductorId, setEliminandoConductorId] = useState(null);
 
     // Modal alumno
     const [modalAlumno, setModalAlumno] = useState(false);
@@ -248,7 +252,7 @@ export default function PantallaAdmin({ navigation }) {
 
     const aplicarColorMarca = (color) => {
         setColorHeader(color);
-        saveBrandingChanges({ headerColor: color, appName: 'kidGo' });
+        saveBrandingChanges({ headerColor: color, appName: 'KidsGo!' });
     };
 
     const guardarNombreColegio = async () => {
@@ -260,12 +264,12 @@ export default function PantallaAdmin({ navigation }) {
 
         await saveBrandingChanges({
             schoolName: nombre,
-            appName: 'kidGo',
+            appName: 'KidsGo!',
             headerColor: colorHeader,
             logoUri: logoUri || logoUrl || '',
         });
 
-        Alert.alert('Listo', 'Se guardo el branding de kidGo para toda la app.');
+        Alert.alert('Listo', 'Se guardo el branding de KidsGo! para toda la app.');
     };
 
     // ── Alumnos CRUD ─────────────────────────────────────────
@@ -325,6 +329,27 @@ export default function PantallaAdmin({ navigation }) {
                     cargarDatos();
                 }
             }
+        ]);
+    };
+
+    const eliminarConductorAdmin = (conductor) => {
+        Alert.alert('Eliminar conductor', `Deseas desvincular a ${conductor.nombre}?`, [
+            { text: 'Cancelar', style: 'cancel' },
+            {
+                text: 'Eliminar',
+                style: 'destructive',
+                onPress: async () => {
+                    try {
+                        setEliminandoConductorId(conductor.id);
+                        await desvincularConductor(conductor.id);
+                        await cargarDatos();
+                    } catch (e) {
+                        Alert.alert('Error', e.message || 'No se pudo eliminar el conductor.');
+                    } finally {
+                        setEliminandoConductorId(null);
+                    }
+                },
+            },
         ]);
     };
 
@@ -413,6 +438,18 @@ export default function PantallaAdmin({ navigation }) {
                         <LogOut size={18} color="#fff" strokeWidth={2} />
                     </TouchableOpacity>
                 </View>
+
+                {!usuario?.colegio_id && !usuario?.colegioId && (
+                    <View style={styles.bannerSinColegio}>
+                        <View style={styles.bannerSinColegioIcono}>
+                            <LinkIcon size={16} color={THEME.secondary} strokeWidth={2.4} />
+                        </View>
+                        <View style={styles.bannerSinColegioTexto}>
+                            <Text style={styles.bannerSinColegioTitulo}>Aun no tienes colegio vinculado</Text>
+                            <Text style={styles.bannerSinColegioDesc}>Puedes entrar al panel y vincularlo cuando recibas tu codigo.</Text>
+                        </View>
+                    </View>
+                )}
 
                 {/* TABS */}
                 <View style={styles.tabsContainer}>
@@ -647,6 +684,13 @@ export default function PantallaAdmin({ navigation }) {
                                     <LinkIcon size={16} color="#fff" strokeWidth={2} />
                                     <Text style={styles.btnAgregarTexto}>Crear codigos y vincular conductores</Text>
                                 </TouchableOpacity>
+                                <TouchableOpacity
+                                    style={[styles.btnAgregar, { backgroundColor: THEME.secondary, justifyContent: 'center', marginBottom: 12 }]}
+                                    onPress={() => navigation.navigate('AdminPadres')}
+                                >
+                                    <Users size={16} color="#fff" strokeWidth={2} />
+                                    <Text style={styles.btnAgregarTexto}>Gestionar padres del colegio</Text>
+                                </TouchableOpacity>
                                 {conductores.map((conductor, i) => (
                                     <View key={i} style={styles.itemCard}>
                                         <View style={[styles.alumnoAvatar, { backgroundColor: colorHeader }]}>
@@ -659,10 +703,23 @@ export default function PantallaAdmin({ navigation }) {
                                             <Text style={styles.itemSub}>Placa: {conductor.placa || 'No registrada'}</Text>
                                             <Text style={styles.itemSub}>Tel: {conductor.telefono}</Text>
                                         </View>
-                                        <View style={[styles.badge, { backgroundColor: conductor.activo ? '#E6F4EA' : '#FEECEC' }]}>
-                                            <Text style={[styles.badgeTexto, { color: conductor.activo ? THEME.success : THEME.error }]}>
-                                                {conductor.activo ? 'Activo' : 'Inactivo'}
-                                            </Text>
+                                        <View style={styles.conductorAcciones}>
+                                            <View style={[styles.badge, { backgroundColor: conductor.activo ? '#E6F4EA' : '#FEECEC' }]}>
+                                                <Text style={[styles.badgeTexto, { color: conductor.activo ? THEME.success : THEME.error }]}>
+                                                    {conductor.activo ? 'Activo' : 'Inactivo'}
+                                                </Text>
+                                            </View>
+                                            <TouchableOpacity
+                                                style={styles.btnEliminarCompacto}
+                                                onPress={() => eliminarConductorAdmin(conductor)}
+                                                disabled={eliminandoConductorId === conductor.id}
+                                            >
+                                                {eliminandoConductorId === conductor.id ? (
+                                                    <ActivityIndicator color={THEME.error} size="small" />
+                                                ) : (
+                                                    <Trash2 size={14} color={THEME.error} strokeWidth={2.2} />
+                                                )}
+                                            </TouchableOpacity>
                                         </View>
                                     </View>
                                 ))}
@@ -705,7 +762,7 @@ export default function PantallaAdmin({ navigation }) {
                                 <Text style={styles.formLabel}>Nombre del colegio</Text>
                                 <TextInput
                                     style={styles.formInput}
-                                    placeholder="Ej: Colegio KidGo"
+                                    placeholder="Ej: Colegio KidsGo!"
                                     value={schoolName}
                                     onChangeText={setSchoolName}
                                     placeholderTextColor={THEME.textSecondary}
@@ -715,7 +772,7 @@ export default function PantallaAdmin({ navigation }) {
                                     onPress={guardarNombreColegio}
                                 >
                                     <Check size={18} color="#fff" strokeWidth={2} />
-                                    <Text style={styles.btnGuardarUrlTexto}>Guardar branding kidGo</Text>
+                                    <Text style={styles.btnGuardarUrlTexto}>Guardar branding KidsGo!</Text>
                                 </TouchableOpacity>
 
                                 {/* Color de la app */}
@@ -758,11 +815,44 @@ export default function PantallaAdmin({ navigation }) {
                                             </View>
                                         </View>
                                     ))}
-                                </View>
+                                    {/* Reset Branding */}
+                                    <Text style={styles.seccionTitulo}>Zona de peligro</Text>
+                                    <TouchableOpacity
+                                        style={styles.btnResetBranding}
+                                        onPress={() => {
+                                            Alert.alert(
+                                                'Resetear branding',
+                                                '¿Estás seguro de que deseas eliminar el logo y volver a los colores originales de KidsGo!?',
+                                                [
+                                                    { text: 'Cancelar', style: 'cancel' },
+                                                    {
+                                                        text: 'Si, resetear',
+                                                        style: 'destructive',
+                                                        onPress: async () => {
+                                                            await saveBrandingChanges({
+                                                                logoUri: '',
+                                                                schoolName: 'Tu colegio',
+                                                                headerColor: THEME.primaryDark,
+                                                                appName: 'KidsGo!'
+                                                            });
+                                                            setLogoUri(null);
+                                                            setLogoUrl('');
+                                                            setSchoolName('Tu colegio');
+                                                            setColorHeader(THEME.primaryDark);
+                                                            Alert.alert('Listo', 'El branding ha sido reseteado.');
+                                                        }
+                                                    }
+                                                ]
+                                            );
+                                        }}
+                                    >
+                                        <Trash2 size={18} color={THEME.error} strokeWidth={2} />
+                                        <Text style={styles.btnResetBrandingTexto}>Resetear branding a valores de fábrica</Text>
+                                    </TouchableOpacity>
 
+                                </View>
                             </View>
                         )}
-
                     </ScrollView>
                 )}
 
@@ -997,6 +1087,29 @@ const styles = StyleSheet.create({
         borderRadius: 10,
         marginTop: 2,
     },
+    bannerSinColegio: {
+        marginHorizontal: 12,
+        marginVertical: 10,
+        backgroundColor: '#EFF6FF',
+        borderWidth: 1,
+        borderColor: '#BFDBFE',
+        borderRadius: 14,
+        padding: 12,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 10,
+    },
+    bannerSinColegioIcono: {
+        width: 34,
+        height: 34,
+        borderRadius: 10,
+        backgroundColor: '#DBEAFE',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    bannerSinColegioTexto: { flex: 1 },
+    bannerSinColegioTitulo: { color: THEME.text, fontSize: 13, fontWeight: '800' },
+    bannerSinColegioDesc: { color: THEME.textSecondary, fontSize: 12, lineHeight: 17, marginTop: 2 },
 
     tabsContainer: {
         backgroundColor: THEME.background,
@@ -1209,6 +1322,20 @@ const styles = StyleSheet.create({
     itemDetailRow: { flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: 2 },
     badge: { borderRadius: 20, paddingHorizontal: 12, paddingVertical: 6 },
     badgeTexto: { fontSize: 12, fontWeight: '700' },
+    conductorAcciones: {
+        alignItems: 'flex-end',
+        gap: 8,
+    },
+    btnEliminarCompacto: {
+        width: 34,
+        height: 34,
+        borderRadius: 17,
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: '#FFF3F0',
+        borderWidth: 1,
+        borderColor: '#FFE5E0',
+    },
 
     logoSeccion: { alignItems: 'center', marginBottom: 24 },
     logoPreview: {
@@ -1403,6 +1530,23 @@ const styles = StyleSheet.create({
         gap: 8,
     },
     btnGuardarUrlTexto: { color: '#fff', fontWeight: '700', fontSize: 15 },
+    btnResetBranding: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 10,
+        backgroundColor: '#FFF3F0',
+        padding: 16,
+        borderRadius: 14,
+        marginTop: 8,
+        borderWidth: 1,
+        borderColor: '#FFE5E0',
+        justifyContent: 'center',
+    },
+    btnResetBrandingTexto: {
+        color: THEME.error,
+        fontSize: 14,
+        fontWeight: '700',
+    },
 
     alumnosBusHeader: {
         flexDirection: 'row',

@@ -1,6 +1,17 @@
 // src/services/vinculacionesService.js
 import fetchWithAuth from './api';
 
+const esError404 = (error) => String(error?.message || '').startsWith('404');
+
+const fetchConFallback404 = async (principal, respaldo, options = {}) => {
+    try {
+        return await fetchWithAuth(principal, options);
+    } catch (error) {
+        if (!esError404(error)) throw error;
+        return fetchWithAuth(respaldo, options);
+    }
+};
+
 // ============================================
 // SUPERADMIN
 // ============================================
@@ -36,15 +47,57 @@ export const getCodigosSuperAdmin = () =>
     fetchWithAuth('/vinculaciones/superadmin/codigos');
 
 export const getUsuariosColegioSuperAdmin = (colegioId) =>
-    fetchWithAuth(`/api/super-admin/colegios/${colegioId}/usuarios`);
+    fetchConFallback404(
+        `/super-admin/colegios/${colegioId}/usuarios`,
+        `/vinculaciones/superadmin/colegios/${colegioId}/usuarios`
+    );
 
 export const resetAdminPasswordSuperAdmin = (colegioId) =>
-    fetchWithAuth(`/api/super-admin/colegios/${colegioId}/reset-admin-password`, {
-        method: 'POST',
-        body: JSON.stringify({
-            colegioId,
-            colegio_id: colegioId,
-        }),
+    fetchConFallback404(
+        `/super-admin/colegios/${colegioId}/reset-admin-password`,
+        `/vinculaciones/superadmin/colegios/${colegioId}/reset-admin-password`,
+        {
+            method: 'POST',
+            body: JSON.stringify({
+                colegioId,
+                colegio_id: colegioId,
+            }),
+        }
+    );
+
+export const impersonateColegio = (colegioId) =>
+    fetchConFallback404(
+        `/super-admin/colegios/${colegioId}/impersonate`,
+        `/vinculaciones/superadmin/colegios/${colegioId}/impersonate`,
+        { method: 'POST' }
+    );
+
+export const asignarAdminDirecto = (colegioId, email) =>
+    fetchWithAuth(
+        `/vinculaciones/superadmin/colegios/${colegioId}/asignar-admin`,
+        {
+            method: 'POST',
+            body: JSON.stringify({ email }),
+        }
+    );
+
+export const desvincularAdmin = (colegioId) =>
+    fetchConFallback404(
+        `/super-admin/colegios/${colegioId}/desvincular-admin`,
+        `/vinculaciones/superadmin/colegios/${colegioId}/desvincular-admin`,
+        { method: 'DELETE' }
+    );
+
+export const actualizarColegio = (colegioId, datos) =>
+    fetchWithAuth(`/vinculaciones/superadmin/colegios/${colegioId}`, {
+        method: 'PUT',
+        body: JSON.stringify(datos),
+    });
+
+export const cambiarEstadoColegio = (colegioId, activo) =>
+    fetchWithAuth(`/vinculaciones/superadmin/colegios/${colegioId}/estado`, {
+        method: 'PATCH',
+        body: JSON.stringify({ activo }),
     });
 
 // ============================================
@@ -54,7 +107,13 @@ export const resetAdminPasswordSuperAdmin = (colegioId) =>
 export const verificarCodigo = (codigo) =>
     fetchWithAuth(`/vinculaciones/verificar-codigo/${codigo}`);
 
-export const registroConCodigo = (datos) =>
+export const registrarUsuario = (datos) =>
+    fetchWithAuth('/auth/registro', {
+        method: 'POST',
+        body: JSON.stringify(datos),
+    });
+
+export const registrarUsuarioConCodigo = (datos) =>
     fetchWithAuth('/vinculaciones/registro-con-codigo', {
         method: 'POST',
         body: JSON.stringify(datos),
@@ -92,6 +151,20 @@ export const desvincularConductor = (conductorId) =>
 // ============================================
 // CONDUCTOR: Gestión de Padres
 // ============================================
+
+export const getPadresAdmin = () =>
+    fetchWithAuth('/vinculaciones/admin/padres');
+
+export const vincularPadreAdminDirecto = (datos) =>
+    fetchWithAuth('/vinculaciones/admin/padres/directo', {
+        method: 'POST',
+        body: JSON.stringify(datos),
+    });
+
+export const desvincularPadreAdmin = (padreId) =>
+    fetchWithAuth(`/vinculaciones/admin/padres/${padreId}`, {
+        method: 'DELETE',
+    });
 
 export const getPadresConductor = () =>
     fetchWithAuth('/vinculaciones/conductor/padres');

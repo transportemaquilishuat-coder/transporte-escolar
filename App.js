@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Alert,
   Animated,
   Easing,
+  Image,
   KeyboardAvoidingView,
   Platform,
   ScrollView,
@@ -38,13 +40,16 @@ import PantallaRegistro from './src/screens/auth/PantallaRegistro';
 import PerfilConductor from './src/screens/conductor/PerfilConductor';
 import ConductorPadresScreen from './src/screens/conductor/PadresScreen';
 import AdminConductoresScreen from './src/screens/admin/ConductoresScreen';
+import AdminPadresScreen from './src/screens/admin/PadresScreen';
 
 // Pantallas de vinculación
 import RegistroCodigoScreen from './src/screens/auth/RegistroCodigoScreen';
 
 import { registrarNotificaciones } from './src/services/notificaciones';
-import { cargarSesionPersistida, guardarSesion } from './src/services/session';
+import { verificarSesion, guardarSesion } from './src/services/session';
+import { API_URL } from './src/services/apiConfig';
 import { KIDGO_THEME } from './src/theme/kidgoTheme';
+import { useBranding } from './src/hooks/useBranding';
 
 const Stack = createNativeStackNavigator();
 
@@ -64,12 +69,41 @@ const obtenerPantallaPorRol = (rol = '') => {
 };
 
 function LoginScreen({ navigation }) {
+  const { branding, resetToFactoryBranding } = useBranding();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const { width } = useWindowDimensions();
   const isDesktop = width >= 920;
+
+  const [taps, setTaps] = useState(0);
+
+  const handleSecretReset = () => {
+    const nextTaps = taps + 1;
+    if (nextTaps >= 5) {
+      setTaps(0);
+      Alert.alert(
+        'Modo Rescate',
+        '¿Deseas restablecer el logo y colores originales de la aplicación?',
+        [
+          { text: 'Cancelar', style: 'cancel' },
+          { 
+            text: 'Sí, restablecer', 
+            style: 'destructive',
+            onPress: async () => {
+              await resetToFactoryBranding();
+              Alert.alert('Éxito', 'Branding restablecido.');
+            }
+          }
+        ]
+      );
+    } else {
+      setTaps(nextTaps);
+      // Reset taps after 2 seconds of inactivity
+      setTimeout(() => setTaps(0), 2000);
+    }
+  };
 
   const floatA = useRef(new Animated.Value(0)).current;
   const floatB = useRef(new Animated.Value(0)).current;
@@ -146,13 +180,20 @@ function LoginScreen({ navigation }) {
 
     setLoading(true);
     try {
-      const respuesta = await fetch('https://transporte-backend-production.up.railway.app/api/auth/login', {
+      const respuesta = await fetch(`${API_URL}/auth/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: email.toLowerCase(), password }),
       });
 
-      const datos = await respuesta.json();
+      const rawBody = await respuesta.text();
+      let datos = {};
+
+      try {
+        datos = rawBody ? JSON.parse(rawBody) : {};
+      } catch (_errorParse) {
+        datos = { error: rawBody || respuesta.statusText };
+      }
 
       if (!respuesta.ok) {
         setError(datos.error || 'Error al iniciar sesión');
@@ -162,7 +203,9 @@ function LoginScreen({ navigation }) {
         const rol = datos.usuario.rol;
         const pantalla = obtenerPantallaPorRol(rol);
 
-        await registrarNotificaciones(datos.usuario.id, datos.token);
+        registrarNotificaciones(datos.usuario.id, datos.token).catch((errorNotificaciones) => {
+          console.log('No se pudo registrar notificaciones:', errorNotificaciones?.message || errorNotificaciones);
+        });
 
         if (pantalla !== 'Login') {
           navigation.reset({
@@ -171,15 +214,15 @@ function LoginScreen({ navigation }) {
           });
         }
       }
-    } catch (_error) {
-      setError('No se pudo conectar al servidor.');
+    } catch (errorConexion) {
+      setError(errorConexion?.message || 'No se pudo conectar al servidor.');
     }
     setLoading(false);
   };
 
   const heroStats = [
     { label: 'Rutas', value: 'En movimiento', Icon: Route },
-    { label: 'Seguridad', value: 'Acceso KidGo', Icon: ShieldCheck },
+    { label: 'Seguridad', value: 'Acceso KidsGo!', Icon: ShieldCheck },
     { label: 'Comunidad', value: 'Familias y equipo', Icon: Users },
   ];
 
@@ -299,11 +342,28 @@ function LoginScreen({ navigation }) {
 
             <View style={styles.formPanel}>
               <View style={styles.formHeader}>
-                <View style={styles.formKicker}>
-                  <ShieldCheck size={14} color={KIDGO_THEME.secondary} strokeWidth={2.2} />
-                  <Text style={styles.formKickerText}>Acceso seguro</Text>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                  <TouchableOpacity 
+                    style={{ flex: 1 }} 
+                    activeOpacity={1} 
+                    onPress={handleSecretReset}
+                  >
+                    <View style={styles.formKicker}>
+                      <ShieldCheck size={14} color={KIDGO_THEME.secondary} strokeWidth={2.2} />
+                      <Text style={styles.formKickerText}>Acceso seguro</Text>
+                    </View>
+                    <Text style={[styles.formTitle, { fontSize: 22 }]}>Inicia sesión en KidsGo!</Text>
+                  </TouchableOpacity>
+                  {branding.logoUri ? (
+                    <TouchableOpacity onPress={handleSecretReset} activeOpacity={0.8}>
+                      <Image 
+                        source={{ uri: branding.logoUri }} 
+                        style={styles.schoolLogo} 
+                        resizeMode="contain"
+                      />
+                    </TouchableOpacity>
+                  ) : null}
                 </View>
-                <Text style={styles.formTitle}>Inicia sesión en KidGo</Text>
                 <Text style={styles.formSubtitle}>
                   Usa tu correo y contraseña para entrar al panel que te corresponde.
                 </Text>
@@ -398,29 +458,56 @@ export default function App() {
     let activo = true;
 
     const hidratarSesion = async () => {
-      const sesion = await cargarSesionPersistida();
+      let pantalla = 'Login';
 
-      if (sesion?.usuario && sesion?.token) {
-        await registrarNotificaciones(sesion.usuario.id, sesion.token);
+      try {
+        // Llamamos a verificarSesion que hace el fetch a /auth/me
+        const sesion = await verificarSesion();
+
+        if (sesion?.usuario && sesion?.token) {
+          pantalla = obtenerPantallaPorRol(sesion.usuario.rol);
+
+          registrarNotificaciones(sesion.usuario.id, sesion.token).catch((errorNotificaciones) => {
+            console.log('No se pudo registrar notificaciones:', errorNotificaciones?.message || errorNotificaciones);
+          });
+        }
+      } catch (errorSesion) {
+        console.log('No se pudo verificar la sesion:', errorSesion?.message || errorSesion);
       }
 
       if (activo) {
-        setPantallaInicial(obtenerPantallaPorRol(sesion?.usuario?.rol));
+        setPantallaInicial(pantalla);
       }
     };
 
-    hidratarSesion();
+    // Pequeño delay para que el splash se vea y no sea un flash
+    const timeout = setTimeout(hidratarSesion, 1500);
 
     return () => {
       activo = false;
+      clearTimeout(timeout);
     };
   }, []);
 
   if (!pantallaInicial) {
     return (
-      <View style={styles.loadingScreen}>
-        <ActivityIndicator size="large" color={KIDGO_THEME.primaryDark} />
-        <Text style={styles.loadingText}>Cargando sesion...</Text>
+      <View style={styles.splashScreenContainer}>
+        <LinearGradient
+          colors={[KIDGO_THEME.secondaryDark, KIDGO_THEME.secondary]}
+          style={StyleSheet.absoluteFill}
+        />
+        <View style={styles.splashContent}>
+          <View style={styles.splashIconBg}>
+            <Bus size={48} color={KIDGO_THEME.primary} strokeWidth={2.5} />
+          </View>
+          <Text style={styles.splashBrand}>KidsGo!</Text>
+          <Text style={styles.splashTagline}>Transporte Escolar Seguro</Text>
+          
+          <View style={styles.splashLoader}>
+            <ActivityIndicator size="small" color="#fff" />
+            <Text style={styles.splashLoadingText}>Verificando perfil...</Text>
+          </View>
+        </View>
       </View>
     );
   }
@@ -437,6 +524,11 @@ export default function App() {
           name="AdminConductores"
           component={AdminConductoresScreen}
           options={{ headerShown: true, title: 'Gestion de Conductores' }}
+        />
+        <Stack.Screen
+          name="AdminPadres"
+          component={AdminPadresScreen}
+          options={{ headerShown: true, title: 'Gestion de Padres' }}
         />
         <Stack.Screen name="Conductor" component={PantallaConductor} />
         <Stack.Screen
@@ -692,15 +784,22 @@ const styles = StyleSheet.create({
     fontWeight: '800',
     letterSpacing: 0.3,
   },
+  schoolLogo: {
+    width: 50,
+    height: 50,
+    borderRadius: 8,
+    backgroundColor: '#f9f9f9',
+    marginLeft: 10,
+  },
   formTitle: {
-    color: KIDGO_THEME.text,
+    color: '#111827',
     fontSize: 26,
     lineHeight: 31,
     fontWeight: '900',
     marginBottom: 8,
   },
   formSubtitle: {
-    color: KIDGO_THEME.textSecondary,
+    color: '#4B5563',
     fontSize: 14,
     lineHeight: 21,
   },
@@ -807,5 +906,56 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 18,
     fontWeight: '600',
+  },
+  // SplashScreen Styles
+  splashScreenContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  splashContent: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  splashIconBg: {
+    width: 100,
+    height: 100,
+    borderRadius: 30,
+    backgroundColor: '#fff',
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.2,
+    shadowRadius: 15,
+    elevation: 10,
+    marginBottom: 20,
+  },
+  splashBrand: {
+    fontSize: 32,
+    fontWeight: '900',
+    color: '#fff',
+    letterSpacing: 1,
+  },
+  splashTagline: {
+    fontSize: 14,
+    color: 'rgba(255,255,255,0.8)',
+    fontWeight: '600',
+    marginTop: 4,
+  },
+  splashLoader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    marginTop: 40,
+    backgroundColor: 'rgba(0,0,0,0.2)',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 20,
+  },
+  splashLoadingText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '700',
   },
 });

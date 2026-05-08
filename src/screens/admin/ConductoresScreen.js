@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -10,7 +10,7 @@ import {
   Modal,
   TextInput,
 } from 'react-native';
-import { Bus, KeyRound, Plus, UserRound } from 'lucide-react-native';
+import { Bus, KeyRound, Plus, Trash2, UserRound } from 'lucide-react-native';
 import { useAdminVinculacion } from '../../hooks/useAdminVinculacion';
 import { useBranding } from '../../hooks/useBranding';
 import { KIDGO_THEME } from '../../theme/kidgoTheme';
@@ -23,6 +23,7 @@ export default function AdminConductoresScreen() {
   const [modalCodigo, setModalCodigo] = useState(false);
   const [modalDirecto, setModalDirecto] = useState(false);
   const [codigoGenerado, setCodigoGenerado] = useState(null);
+  const [eliminandoConductorId, setEliminandoConductorId] = useState(null);
   const [nuevoConductor, setNuevoConductor] = useState({
     nombre: '',
     email: '',
@@ -86,10 +87,13 @@ export default function AdminConductoresScreen() {
         style: 'destructive',
         onPress: async () => {
           try {
+            setEliminandoConductorId(conductorId);
             await eliminarConductor(conductorId);
             await cargarConductores();
           } catch (err) {
             Alert.alert('Error', err.message);
+          } finally {
+            setEliminandoConductorId(null);
           }
         },
       },
@@ -104,12 +108,20 @@ export default function AdminConductoresScreen() {
             <UserRound size={18} color={brandColor} strokeWidth={2} />
           </View>
           <View style={styles.cardTitleText}>
-            <Text style={styles.nombre}>{item.nombre}</Text>
+            <Text style={styles.nombre} numberOfLines={1} ellipsizeMode="tail">{item.nombre}</Text>
             <Text style={styles.info}>{item.email}</Text>
           </View>
         </View>
-        <TouchableOpacity onPress={() => handleEliminar(item.id, item.nombre)}>
-          <Text style={styles.btnEliminar}>Eliminar</Text>
+        <TouchableOpacity
+          style={styles.btnEliminar}
+          onPress={() => handleEliminar(item.id, item.nombre)}
+          disabled={eliminandoConductorId === item.id}
+        >
+          {eliminandoConductorId === item.id ? (
+            <ActivityIndicator color={KIDGO_THEME.error} size="small" />
+          ) : (
+            <Trash2 size={14} color={KIDGO_THEME.error} strokeWidth={2.2} />
+          )}
         </TouchableOpacity>
       </View>
       <Text style={styles.info}>Telefono: {item.telefono || 'Sin telefono'}</Text>
@@ -220,7 +232,16 @@ const styles = StyleSheet.create({
   avatar: { width: 42, height: 42, borderRadius: 12, alignItems: 'center', justifyContent: 'center' },
   cardTitleText: { flex: 1 },
   nombre: { fontSize: 18, fontWeight: '800', flex: 1, color: KIDGO_THEME.text },
-  btnEliminar: { color: KIDGO_THEME.error, fontSize: 13, fontWeight: '800', paddingTop: 4 },
+  btnEliminar: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#FEF2F2',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+  },
   info: { color: KIDGO_THEME.textSecondary, marginBottom: 4 },
   empty: { textAlign: 'center', color: KIDGO_THEME.textSecondary, marginTop: 40 },
   modalOverlay: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(12, 20, 33, 0.45)' },

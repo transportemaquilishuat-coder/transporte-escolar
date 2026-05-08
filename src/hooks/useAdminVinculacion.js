@@ -5,6 +5,9 @@ import {
     generarCodigoConductor,
     vincularConductorDirecto,
     desvincularConductor,
+    getPadresAdmin,
+    vincularPadreAdminDirecto,
+    desvincularPadreAdmin,
 } from '../services/vinculacionesService';
 
 export const useAdminVinculacion = () => {
@@ -29,6 +32,9 @@ export const useAdminVinculacion = () => {
     const generarCodigo = useCallback((config) => ejecutar(generarCodigoConductor, config), []);
     const vincularDirecto = useCallback((datos) => ejecutar(vincularConductorDirecto, datos), []);
     const eliminarConductor = useCallback((id) => ejecutar(desvincularConductor, id), []);
+    const listarPadres = useCallback(() => ejecutar(getPadresAdmin), []);
+    const vincularPadreDirecto = useCallback((datos) => ejecutar(vincularPadreAdminDirecto, datos), []);
+    const eliminarPadre = useCallback((id) => ejecutar(desvincularPadreAdmin, id), []);
 
     return {
         loading,
@@ -37,5 +43,8 @@ export const useAdminVinculacion = () => {
         generarCodigo,
         vincularDirecto,
         eliminarConductor,
+        listarPadres,
+        vincularPadreDirecto,
+        eliminarPadre,
     };
-};r
+};

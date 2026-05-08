@@ -4,23 +4,34 @@ import {
   View, Text, StyleSheet, TouchableOpacity, Modal,
   TextInput, ActivityIndicator, Linking, Alert,
   Animated, PanResponder, Dimensions, ScrollView,
+  AppState,
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from '../components/MapaSeguro';
-import { enviarNotificacionLocal } from '../services/notificaciones';
+import { enviarNotificacionLocal, escucharNotificaciones } from '../services/notificaciones';
+import fetchWithAuth, {
+  vincularConCodigo,
+  generarInvitacionPadre,
+  obtenerCambiosProgramados,
+  crearCambioProgramado,
+  eliminarCambioProgramado
+} from '../services/api';
 import * as Speech from 'expo-speech';
 import * as Location from 'expo-location';
 import {
-  Bus, Home, Phone, Volume2, VolumeX, AlertTriangle,
-  Check, X, MapPin, Clock, User, ChevronUp,
-  LogOut, Plus, Minus
+  Bus, Home, Phone, Volume2, VolumeX, AlertTriangle, AlertCircle,
+  Check, X, MapPin, Clock, User,
+  LogOut, Plus, Users, CreditCard,
+  Sun, CloudRain, Wind
 } from 'lucide-react-native';
-import { limpiarSesion, obtenerToken } from '../services/session';
+import { cargarSesionPersistida, limpiarSesion, obtenerToken, obtenerUsuario } from '../services/session';
 
-const SERVIDOR = 'https://transporte-backend-production.up.railway.app';
+import { API_BASE_URL } from '../services/apiConfig';
+
+const SERVIDOR = API_BASE_URL;
 const GOOGLE_API_KEY = 'AIzaSyDVaVcUL_e_lO0nD29QUfOfl0u3RUUFEdM';
-const CASA = { latitude: 13.7020, longitude: -89.2250 };
-const ALUMNO = { id: 1, nombre: 'Pedro García', grado: '3ro primaria', ruta: 'Ruta Norte' };
+const CASA_DEFAULT = { latitude: 13.7020, longitude: -89.2250 };
+const PAIS_GEOCODING = 'El Salvador';
 
 // Función para obtener ETA real usando Google Directions API
 const obtenerETADeGoogle = async (origen, destino) => {
@@ -96,16 +107,27 @@ export default function PantallaPadre({ navigation }) {
   const mapRef = useRef(null);
   const avisoVozDadoRef = useRef(false);
   const vozActivadaRef = useRef(true);
+  const sugerenciaDireccionIntentadaRef = useRef(false);
 
-  // Estado del bus
-  const [busPos, setBusPos] = useState({ latitude: 13.6929, longitude: -89.2182 });
+  // ========== ESTADOS ==========
+  const [socketConectado, setSocketConectado] = useState(socket.connected);
+
+  // Lista de hijos
+  const [hijos, setHijos] = useState([]);
+  const [hijoSeleccionadoId, setHijoSeleccionadoId] = useState(null);
+  const [cargandoHijos, setCargandoHijos] = useState(true);
+
+  // Estado del bus (ahora es un objeto indexado por rutaId)
+  const [buses, setBuses] = useState({});
   const [rutaActiva, setRutaActiva] = useState(false);
   const [minutosRestantes, setMinutosRestantes] = useState(null);
   const [historialRuta, setHistorialRuta] = useState([]);
-  const [puntoRecogida, setPuntoRecogida] = useState(CASA);
+  const [puntoRecogida, setPuntoRecogida] = useState(CASA_DEFAULT);
   const [puntoRecogidaBloqueado, setPuntoRecogidaBloqueado] = useState(false);
   const [guardandoPunto, setGuardandoPunto] = useState(false);
   const [mostrarPickupHint, setMostrarPickupHint] = useState(true);
+  const [puntoSugeridoPorDireccion, setPuntoSugeridoPorDireccion] = useState(false);
+  const [direccionSugerida, setDireccionSugerida] = useState('');
   const [infoTrafico, setInfoTrafico] = useState(null); // Info de tráfico de Google
 
   // Ausencia
@@ -123,9 +145,32 @@ export default function PantallaPadre({ navigation }) {
   const [sheetAbierto, setSheetAbierto] = useState(false);
   const [seccionSheet, setSeccionSheet] = useState('info');
 
+  // Vincular nuevo hijo
+  const [modalVincular, setModalVincular] = useState(false);
+  const [codigoVinculacion, setCodigoVinculacion] = useState('');
+  const [loadingVincular, setLoadingVincular] = useState(false);
+
   // Voz
   const [vozActivada, setVozActivada] = useState(true);
   const [avisoVozDado, setAvisoVozDado] = useState(false);
+
+  // Multi-padre
+  const [codigoInvitacion, setCodigoInvitacion] = useState(null);
+  const [mostrarModalInvitacion, setMostrarModalInvitacion] = useState(false);
+  const [generandoInvitacion, setGenerandoInvitacion] = useState(false);
+
+  // Programación de cambios
+  const [cambiosProgramados, setCambiosProgramados] = useState([]);
+  const [cargandoCambios, setCargandoCambios] = useState(false);
+  const [modalNuevoCambio, setModalNuevoCambio] = useState(false);
+  const [datosNuevoCambio, setDatosNuevoCambio] = useState({
+    tipo: 'devolucion',
+    parada: '',
+    nota: '',
+    fecha: new Date().toISOString().split('T')[0],
+    latitude: null, // Añadido para coincidir con el backend
+    longitude: null, // Añadido para coincidir con el backend
+  });
 
   // Historial
   const [historialViajes, setHistorialViajes] = useState([
@@ -136,6 +181,142 @@ export default function PantallaPadre({ navigation }) {
     { fecha: 'Jue 08', hora: '06:55', estado: 'Retraso', alumnos: 5 },
   ]);
 
+  const hijoSeleccionado = hijos.find(h => h.id === hijoSeleccionadoId) || hijos[0];
+
+  // Clima (Real-time API)
+  const [clima, setClima] = useState({
+    tipo: 'despejado',
+    temp: 25,
+    mensaje: 'Cargando clima...',
+    color: THEME.secondary,
+    cargando: true
+  });
+
+  const [usuario, setUsuario] = useState(obtenerUsuario());
+
+  useEffect(() => {
+    const user = obtenerUsuario();
+    if (user) setUsuario(user);
+    else {
+      cargarSesionPersistida().then(res => {
+        if (res?.usuario) setUsuario(res.usuario);
+      });
+    }
+  }, []);
+
+  // Posicion arrastrable del clima
+  const climaPos = useRef(new Animated.ValueXY({ x: 14, y: 98 })).current;
+  const panResponderClima = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: () => true,
+      onPanResponderGrant: () => {
+        climaPos.setOffset({
+          x: climaPos.x._value,
+          y: climaPos.y._value
+        });
+        climaPos.setValue({ x: 0, y: 0 });
+      },
+      onPanResponderMove: Animated.event(
+        [null, { dx: climaPos.x, dy: climaPos.y }],
+        { useNativeDriver: false }
+      ),
+      onPanResponderRelease: () => {
+        climaPos.flattenOffset();
+      },
+    })
+  ).current;
+
+  const obtenerClimaReal = async (coords) => {
+    try {
+      const API_KEY = '23c242058b9bc32130e3d4cef5f44b2c';
+      const url = `https://api.openweathermap.org/data/2.5/weather?lat=${coords.latitude}&lon=${coords.longitude}&appid=${API_KEY}&units=metric&lang=es`;
+
+      const response = await fetch(url);
+      const data = await response.json();
+
+      if (data.main) {
+        const temp = Math.round(data.main.temp);
+        const condicion = data.weather[0].main.toLowerCase();
+        let tipo = 'despejado';
+        let mensaje = 'Clima agradable para el viaje.';
+        let color = THEME.success;
+
+        if (condicion.includes('rain') || condicion.includes('drizzle') || condicion.includes('thunderstorm')) {
+          tipo = 'lluvia';
+          mensaje = 'Se espera lluvia. No olvides el impermeable.';
+          color = '#3B82F6';
+        } else if (temp >= 29) {
+          tipo = 'calor';
+          mensaje = 'Dia caluroso. Lleva hidratacion extra.';
+          color = '#F59E0B';
+        } else if (data.wind.speed > 20) {
+          tipo = 'viento';
+          mensaje = 'Viento fuerte. Se recomienda chaqueta.';
+          color = '#64748B';
+        } else if (temp <= 18) {
+          tipo = 'frio';
+          mensaje = 'Clima fresco. Abriga a tu hijo.';
+          color = '#6366F1';
+        }
+
+        setClima({ tipo, temp, mensaje, color, cargando: false });
+      }
+    } catch (e) {
+      console.log('Error obteniendo clima:', e);
+      setClima(prev => ({ ...prev, mensaje: 'Clima no disponible', cargando: false }));
+    }
+  };
+
+  useEffect(() => {
+    if (puntoRecogida?.latitude) {
+      obtenerClimaReal(puntoRecogida);
+    }
+  }, [puntoRecogida]);
+
+  const renderClima = () => {
+    if (clima.cargando) return null;
+    const WeatherIcon = clima.tipo === 'lluvia' ? CloudRain : clima.tipo === 'calor' ? Sun : clima.tipo === 'viento' ? Wind : Sun;
+    return (
+      <Animated.View
+        {...panResponderClima.panHandlers}
+        style={[
+          styles.climaBadge,
+          {
+            backgroundColor: THEME.surface,
+            transform: climaPos.getTranslateTransform()
+          }
+        ]}
+      >
+        <TouchableOpacity
+          style={styles.climaTouchArea}
+          onPress={() => obtenerClimaReal(puntoRecogida)}
+        >
+          <View style={[styles.climaIconContainer, { backgroundColor: clima.color + '15' }]}>
+            <WeatherIcon size={18} color={clima.color} strokeWidth={2.5} />
+          </View>
+          <View style={styles.climaInfo}>
+            <Text style={styles.climaTemp}>{clima.temp}°C</Text>
+            <Text style={styles.climaMensaje} numberOfLines={2}>{clima.mensaje}</Text>
+          </View>
+        </TouchableOpacity>
+      </Animated.View>
+    );
+  };
+
+  useEffect(() => {
+    const onConnect = () => setSocketConectado(true);
+    const onDisconnect = () => setSocketConectado(false);
+
+    socket.on('connect', onConnect);
+    socket.on('disconnect', onDisconnect);
+
+    return () => {
+      socket.off('connect', onConnect);
+      socket.off('disconnect', onDisconnect);
+    };
+  }, []);
+
   useEffect(() => {
     avisoVozDadoRef.current = avisoVozDado;
   }, [avisoVozDado]);
@@ -143,6 +324,68 @@ export default function PantallaPadre({ navigation }) {
   useEffect(() => {
     vozActivadaRef.current = vozActivada;
   }, [vozActivada]);
+
+  // Escuchar notificaciones en tiempo real para el abordaje
+  useEffect(() => {
+    const cleanup = escucharNotificaciones((notification) => {
+      const { data } = notification.request.content;
+      if (data?.tipo === 'abordado' && data?.alumnoId) {
+        setHijos(prev => prev.map(h => h.id === data.alumnoId ? { ...h, abordado: true } : h));
+      }
+
+      // Alerta de proximidad 5 minutos con TTS
+      if (data?.tipo === 'alerta_proximidad') {
+        const mensajeAudio = data?.mensajeAudio || `Atención. El bus llegará en 5 minutos.`;
+        if (vozActivadaRef.current) {
+          Speech.speak(mensajeAudio, { language: 'es-MX', rate: 0.85 });
+        }
+        // Mostrar alerta visual adicional por si el audio no se escucha
+        enviarNotificacionLocal('🚌 Bus cerca', mensajeAudio);
+      }
+    }, () => { });
+
+    // Escuchar eventos de la ruta en tiempo real vía Sockets
+    socket.on('ruta:evento', (datos) => {
+      const hijoActual = hijos.find(h => h.id === hijoSeleccionadoId) || hijos[0];
+      if (hijoActual && datos.rutaId === hijoActual.rutaId) {
+        setHistorialViajes(prev => [
+          {
+            fecha: 'Hoy',
+            hora: datos.evento.hora,
+            estado: 'Evento',
+            texto: datos.evento.texto
+          },
+          ...prev
+        ]);
+      }
+    });
+
+    return () => {
+      cleanup();
+      socket.off('ruta:evento');
+    };
+  }, [hijos, hijoSeleccionadoId]);
+
+  useEffect(() => {
+    if (hijoSeleccionado) {
+      if (hijoSeleccionado.latitude && hijoSeleccionado.longitude) {
+        const coords = {
+          latitude: Number(hijoSeleccionado.latitude),
+          longitude: Number(hijoSeleccionado.longitude)
+        };
+        setPuntoRecogida(coords);
+        setPuntoRecogidaBloqueado(true);
+        setMostrarPickupHint(false);
+        setPuntoSugeridoPorDireccion(false);
+      } else {
+        setPuntoRecogidaBloqueado(false);
+        obtenerDireccionParaSugerencia(hijoSeleccionado).then(direccion => {
+          sugerirPuntoDesdeDireccion(direccion);
+        });
+      }
+      setTelefonoConductor(hijoSeleccionado.conductorTelefono || '70000002');
+    }
+  }, [hijoSeleccionadoId, hijos]);
 
   // ── Bottom Sheet PanResponder ──────────────────────────────
   const panResponder = useRef(
@@ -188,85 +431,78 @@ export default function PantallaPadre({ navigation }) {
 
   // ── Tracking GPS ──────────────────────────────────────────
   useEffect(() => {
-    // Cargar datos sin bloquear la UI
     cargarConfiguracion();
-    cargarPuntoRecogida();
+    cargarHijos();
 
-    // Conectar socket con manejo de errores
     try {
       socket.connect();
     } catch (err) {
-      console.log('Socket connection error (non-blocking):', err.message);
+      console.log('Socket connection error:', err.message);
     }
 
     socket.on('bus:ubicacion', async (datos) => {
       if (datos.activo) {
         const busCoords = { latitude: datos.latitude, longitude: datos.longitude };
-        setBusPos(busCoords);
-        setRutaActiva(true);
-        setHistorialRuta(prev => [...prev, busCoords]);
 
-        // Obtener ETA real de Google Directions (incluye tráfico)
-        // Solo si hay conexión a internet
-        if (navigator.onLine) {
-          try {
-            const etaData = await obtenerETADeGoogle(busCoords, puntoRecogida);
-            if (etaData && etaData.minutos) {
-              setMinutosRestantes(etaData.minutos);
-              setInfoTrafico({
-                distancia: etaData.distancia,
-                horaLlegada: etaData.horaLlegada,
-                estadoTrafico: etaData.estadoTrafico
-              });
-              return; // Salir si exitoso
-            }
-          } catch (e) {
-            console.log('ETA Google failed, using fallback');
+        // Actualizar mapa de buses
+        setBuses(prev => ({
+          ...prev,
+          [datos.rutaId || 'global']: busCoords
+        }));
+
+        // Si el bus es del hijo seleccionado, actualizar historial y ETA
+        const hijoActual = hijos.find(h => h.id === hijoSeleccionadoId) || hijos[0];
+        if (hijoActual && (datos.rutaId === hijoActual.rutaId || !datos.rutaId)) {
+          setRutaActiva(true);
+          setHistorialRuta(prev => [...prev, busCoords]);
+
+          if (navigator.onLine) {
+            try {
+              const etaData = await obtenerETADeGoogle(busCoords, puntoRecogida);
+              if (etaData && etaData.minutos) {
+                setMinutosRestantes(etaData.minutos);
+                setInfoTrafico({
+                  distancia: etaData.distancia,
+                  horaLlegada: etaData.horaLlegada,
+                  estadoTrafico: etaData.estadoTrafico
+                });
+              }
+            } catch (e) { }
           }
-        }
 
-        // Fallback: cálculo simple
-        const distancia = calcularDistancia(
-          datos.latitude, datos.longitude,
-          puntoRecogida.latitude, puntoRecogida.longitude
-        );
-        const minutos = Math.round(distancia / 0.5);
-        setMinutosRestantes(minutos);
-        setInfoTrafico(null);
-
-        if (minutos <= 5 && minutos > 0 && !avisoVozDadoRef.current && vozActivadaRef.current) {
-          setAvisoVozDado(true);
-          darAvisoDeVoz(minutos);
-          await enviarNotificacionLocal(
-            '🚌 Bus cercano',
-            `El bus llegará en ${minutos} minutos.`
+          const distancia = calcularDistancia(
+            datos.latitude, datos.longitude,
+            puntoRecogida.latitude, puntoRecogida.longitude
           );
+          const minutos = Math.round(distancia / 0.5);
+          if (!infoTrafico) setMinutosRestantes(minutos);
+
+          if (minutos <= 5 && minutos > 0 && !avisoVozDadoRef.current && vozActivadaRef.current) {
+            setAvisoVozDado(true);
+            darAvisoDeVoz(minutos);
+            await enviarNotificacionLocal(
+              '🚌 Bus cercano',
+              `El bus de ${hijoActual.nombre} llegará en ${minutos} minutos.`
+            );
+          }
+
+          mapRef.current?.animateToRegion({
+            ...busCoords,
+            latitudeDelta: 0.01,
+            longitudeDelta: 0.01,
+          }, 800);
         }
-
-        if (minutos === 0 && vozActivadaRef.current) {
-          Speech.speak('El bus escolar ha llegado a tu parada.', {
-            language: 'es-MX',
-            rate: 0.9
-          });
-        }
-
-        mapRef.current?.animateToRegion({
-          latitude: datos.latitude,
-          longitude: datos.longitude,
-          latitudeDelta: 0.01,
-          longitudeDelta: 0.01,
-        }, 800);
-
-      } else {
-        setRutaActiva(false);
       }
     });
 
     socket.on('bus:desvio', async (datos) => {
-      await enviarNotificacionLocal(
-        '⚠️ Alerta de desvío',
-        `El bus se desvió ${datos.distanciaMetros}m de la ruta.`
-      );
+      const hijoActual = hijos.find(h => h.id === hijoSeleccionadoId);
+      if (hijoActual && datos.rutaId === hijoActual.rutaId) {
+        await enviarNotificacionLocal(
+          '⚠️ Alerta de desvío',
+          `El bus de ${hijoActual.nombre} se desvió ${datos.distanciaMetros}m.`
+        );
+      }
     });
 
     socket.emit('padre:solicitar_ubicacion');
@@ -276,9 +512,55 @@ export default function PantallaPadre({ navigation }) {
       socket.off('bus:desvio');
       socket.disconnect();
     };
-  }, [puntoRecogida.latitude, puntoRecogida.longitude]);
+  }, [hijos, hijoSeleccionadoId, puntoRecogida]);
 
   // ── Funciones ─────────────────────────────────────────────
+  const cargarHijos = async () => {
+    try {
+      const data = await fetchWithAuth('/padres/mis-hijos');
+      const listaHijos = data.hijos || [];
+      setHijos(listaHijos);
+
+      if (listaHijos.length > 0) {
+        setHijoSeleccionadoId((idActual) => (
+          listaHijos.some(hijo => hijo.id === idActual) ? idActual : listaHijos[0].id
+        ));
+        const rutasIds = [...new Set(listaHijos.map(h => h.rutaId).filter(Boolean))];
+        socket.emit('padre:unirse_rutas', rutasIds);
+      } else {
+        setHijoSeleccionadoId(null);
+      }
+    } catch (e) {
+      console.log('Error cargando hijos:', e);
+    } finally {
+      setCargandoHijos(false);
+    }
+  };
+
+  useEffect(() => {
+    const refrescarDatosPadre = () => {
+      cargarHijos();
+      if (seccionSheet === 'calendario') {
+        handleCargarCambios();
+      }
+    };
+
+    const appStateSubscription = AppState.addEventListener('change', (nextState) => {
+      if (nextState === 'active') {
+        refrescarDatosPadre();
+      }
+    });
+
+    const focusUnsubscribe = navigation?.addListener?.('focus', refrescarDatosPadre);
+
+    return () => {
+      appStateSubscription.remove();
+      if (typeof focusUnsubscribe === 'function') {
+        focusUnsubscribe();
+      }
+    };
+  }, [navigation, seccionSheet]);
+
   const darAvisoDeVoz = (minutos) => {
     const mensaje = minutos === 1
       ? 'Atención. El bus escolar llegará en un minuto. Por favor prepara a tu hijo.'
@@ -296,25 +578,78 @@ export default function PantallaPadre({ navigation }) {
     } catch (e) { }
   };
 
-  const cargarPuntoRecogida = async () => {
-    try {
-      const res = await fetch(`${SERVIDOR}/api/admin/alumnos`, { headers: await obtenerAuthHeaders() });
-      const datos = await res.json();
-      const alumno = (datos.alumnos || []).find((item) => item.id === ALUMNO.id);
+  const obtenerDireccionTexto = (origen = {}) => {
+    const partes = [
+      origen.direccion,
+      origen.direccion_residencia,
+      origen.direccionResidencia,
+      origen.domicilio,
+      origen.address,
+      origen.colonia,
+      origen.municipio,
+      origen.departamento,
+    ];
 
-      if (alumno?.latitude && alumno?.longitude) {
-        const coords = {
-          latitude: Number(alumno.latitude),
-          longitude: Number(alumno.longitude),
-        };
-        setPuntoRecogida(coords);
-        setPuntoRecogidaBloqueado(true);
-        setMostrarPickupHint(false);
-      } else {
-        setPuntoRecogidaBloqueado(false);
-        setMostrarPickupHint(true);
+    return partes
+      .filter(Boolean)
+      .map((parte) => String(parte).trim())
+      .filter(Boolean)
+      .join(', ');
+  };
+
+  const obtenerDireccionParaSugerencia = async (alumno) => {
+    const direccionAlumno = obtenerDireccionTexto(alumno);
+    const parada = String(alumno?.parada || '').trim();
+
+    if (direccionAlumno) return direccionAlumno;
+    if (parada && !/^punto\s+-?\d/i.test(parada)) return parada;
+
+    try {
+      const rawUsuario = await AsyncStorage.getItem('usuario');
+      const usuario = rawUsuario ? JSON.parse(rawUsuario) : null;
+      return obtenerDireccionTexto(usuario);
+    } catch (e) {
+      return '';
+    }
+  };
+
+  const sugerirPuntoDesdeDireccion = async (direccion) => {
+    const texto = String(direccion || '').trim();
+    if (!texto || sugerenciaDireccionIntentadaRef.current) return false;
+
+    sugerenciaDireccionIntentadaRef.current = true;
+
+    try {
+      const consulta = texto.toLowerCase().includes('el salvador')
+        ? texto
+        : `${texto}, ${PAIS_GEOCODING}`;
+      const resultados = await Location.geocodeAsync(consulta);
+      const primerResultado = resultados?.[0];
+
+      if (!primerResultado?.latitude || !primerResultado?.longitude) {
+        return false;
       }
-    } catch (e) { }
+
+      const coords = {
+        latitude: primerResultado.latitude,
+        longitude: primerResultado.longitude,
+      };
+
+      setPuntoRecogida(coords);
+      setDireccionSugerida(texto);
+      setPuntoSugeridoPorDireccion(true);
+      setMostrarPickupHint(true);
+      mapRef.current?.animateToRegion({
+        ...coords,
+        latitudeDelta: 0.008,
+        longitudeDelta: 0.008,
+      }, 800);
+
+      return true;
+    } catch (e) {
+      console.log('No se pudo sugerir punto por direccion:', e?.message);
+      return false;
+    }
   };
 
   const calcularDistancia = (lat1, lon1, lat2, lon2) => {
@@ -328,9 +663,10 @@ export default function PantallaPadre({ navigation }) {
   };
 
   const llamarConductor = () => {
+    if (!hijoSeleccionado) return;
     Alert.alert(
       'Llamar conductor',
-      `¿Deseas llamar al conductor de ${ALUMNO.ruta}?`,
+      `¿Deseas llamar al conductor de ${hijoSeleccionado.rutaNombre}?`,
       [
         { text: 'Cancelar', style: 'cancel' },
         {
@@ -364,12 +700,13 @@ export default function PantallaPadre({ navigation }) {
   };
 
   const reportarAusencia = async () => {
+    if (!hijoSeleccionado) return;
     setLoadingAusencia(true);
     try {
       await fetch(`${SERVIDOR}/api/asignaciones/ausencia`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...(await obtenerAuthHeaders()) },
-        body: JSON.stringify({ alumnoId: ALUMNO.id, motivo: motivoAusencia || 'Sin especificar' }),
+        body: JSON.stringify({ alumnoId: hijoSeleccionado.id, motivo: motivoAusencia || 'Sin especificar' }),
       });
       setAusenciaReportada(true);
       setModalAusencia(false);
@@ -380,7 +717,111 @@ export default function PantallaPadre({ navigation }) {
     }
   };
 
+  const handleVincularHijo = async () => {
+    if (!codigoVinculacion.trim()) {
+      Alert.alert('Error', 'Ingresa el codigo de vinculacion.');
+      return;
+    }
+
+    setLoadingVincular(true);
+    try {
+      const token = obtenerToken() || await AsyncStorage.getItem('token');
+      await vincularConCodigo(codigoVinculacion.trim().toUpperCase(), token);
+
+      setModalVincular(false);
+      setCodigoVinculacion('');
+      Alert.alert('Exito', 'Hijo vinculado correctamente.');
+      await cargarHijos();
+    } catch (e) {
+      Alert.alert('Error', e.message || 'No se pudo vincular el hijo.');
+    } finally {
+      setLoadingVincular(false);
+    }
+  };
+
+  const handleGenerarInvitacion = async () => {
+    if (!hijoSeleccionado) return;
+    setGenerandoInvitacion(true);
+    try {
+      const res = await generarInvitacionPadre(hijoSeleccionado.id);
+      setCodigoInvitacion(res.codigo);
+      setMostrarModalInvitacion(true);
+    } catch (e) {
+      Alert.alert('Error', 'No se pudo generar el codigo de invitacion.');
+    } finally {
+      setGenerandoInvitacion(false);
+    }
+  };
+
+  const handleCargarCambios = async () => {
+    setCargandoCambios(true);
+    try {
+      const res = await obtenerCambiosProgramados();
+      setCambiosProgramados(res.programaciones || res.cambios || []);
+    } catch (e) {
+      console.log('Error cargando cambios:', e);
+    } finally {
+      setCargandoCambios(false);
+    }
+  };
+
+  const handleCrearCambio = async () => {
+    if (!hijoSeleccionado) return;
+    if (!datosNuevoCambio.parada.trim()) {
+      Alert.alert('Error', 'Ingresa la nueva direccion o parada.');
+      return;
+    }
+
+    try {
+      await crearCambioProgramado({
+        alumno_id: hijoSeleccionado.id,
+        tipo: datosNuevoCambio.tipo,
+        parada: datosNuevoCambio.parada,
+        nota: datosNuevoCambio.nota,
+        fecha: datosNuevoCambio.fecha,
+        latitude: datosNuevoCambio.latitude, // Aseguramos que se envíe
+        longitude: datosNuevoCambio.longitude, // Aseguramos que se envíe
+      });
+      setModalNuevoCambio(false);
+      setDatosNuevoCambio({
+        tipo: 'devolucion',
+        parada: '',
+        nota: '',
+        fecha: new Date().toISOString().split('T')[0],
+        latitude: null,
+        longitude: null,
+      });
+      Alert.alert('Exito', 'Cambio programado correctamente.');
+      await Promise.all([handleCargarCambios(), cargarHijos()]);
+    } catch (e) {
+      Alert.alert('Error', e.message || 'No se pudo programar el cambio.');
+    }
+  };
+
+  const handleEliminarCambio = (id) => {
+    Alert.alert(
+      'Eliminar cambio',
+      '¿Deseas cancelar este cambio programado?',
+      [
+        { text: 'No', style: 'cancel' },
+        {
+          text: 'Si, eliminar',
+          style: 'destructive',
+          onPress: async () => {
+            try {
+              await eliminarCambioProgramado(id);
+              await Promise.all([handleCargarCambios(), cargarHijos()]);
+            } catch (e) {
+              Alert.alert('Error', 'No se pudo eliminar el cambio.');
+            }
+          }
+        }
+      ]
+    );
+  };
+
   const guardarPuntoRecogida = async (coords) => {
+    if (!hijoSeleccionado) return;
     setGuardandoPunto(true);
 
     try {
@@ -399,39 +840,30 @@ export default function PantallaPadre({ navigation }) {
         }
       } catch (e) { }
 
-      let alumnoActual = null;
-      try {
-        const res = await fetch(`${SERVIDOR}/api/admin/alumnos`, { headers: await obtenerAuthHeaders() });
-        const datos = await res.json();
-        alumnoActual = (datos.alumnos || []).find((item) => item.id === ALUMNO.id) || null;
-      } catch (e) { }
-
       const payload = {
-        ...(alumnoActual || {}),
-        nombre: alumnoActual?.nombre || ALUMNO.nombre,
-        grado: alumnoActual?.grado || ALUMNO.grado,
-        ruta_id: alumnoActual?.ruta_id || 1,
-        padre_id: alumnoActual?.padre_id || 3,
-        orden: alumnoActual?.orden || 1,
-        activo: alumnoActual?.activo ?? true,
         parada,
         latitude: coords.latitude,
         longitude: coords.longitude,
       };
 
-      const response = await fetch(`${SERVIDOR}/api/admin/alumnos/${ALUMNO.id}`, {
+      const response = await fetch(`${SERVIDOR}/api/padres/hijos/${hijoSeleccionado.id}/punto-recogida`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', ...(await obtenerAuthHeaders()) },
         body: JSON.stringify(payload),
       });
-
       if (!response.ok) {
-        throw new Error('No se pudo guardar el punto de recogida');
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'No se pudo guardar el punto de recogida');
       }
 
       setPuntoRecogida(coords);
       setPuntoRecogidaBloqueado(true);
       setMostrarPickupHint(false);
+      setPuntoSugeridoPorDireccion(false);
+
+      // Actualizar el hijo en la lista local
+      setHijos(prev => prev.map(h => h.id === hijoSeleccionado.id ? { ...h, latitude: coords.latitude, longitude: coords.longitude, parada } : h));
+
       Alert.alert('Punto actualizado', 'El conductor usara este punto para marcar el abordaje automatico.');
     } catch (e) {
       setPuntoRecogida(coords);
@@ -450,7 +882,21 @@ export default function PantallaPadre({ navigation }) {
 
     setPuntoRecogida(coords);
     setMostrarPickupHint(false);
+    setPuntoSugeridoPorDireccion(false);
     guardarPuntoRecogida(coords);
+  };
+
+  const confirmarPuntoSugerido = () => {
+    guardarPuntoRecogida(puntoRecogida);
+  };
+
+  const ajustarPuntoSugerido = () => {
+    setPuntoSugeridoPorDireccion(false);
+    setMostrarPickupHint(true);
+    Alert.alert(
+      'Ajustar punto',
+      'Manten presionado el mapa exactamente donde el conductor debe recoger al estudiante.'
+    );
   };
 
   const solicitarAutorizacionCambio = () => {
@@ -491,13 +937,48 @@ export default function PantallaPadre({ navigation }) {
       {/* HEADER */}
       <View style={styles.header}>
         <View style={styles.headerContent}>
-          <View>
-            <Text style={styles.bienvenida}>Hola</Text>
-            <Text style={styles.titulo}>{ALUMNO.nombre}</Text>
-            <View style={styles.subtituloRow}>
-              <User size={12} color="rgba(255,255,255,0.7)" strokeWidth={2} />
-              <Text style={styles.subtitulo}>{ALUMNO.grado} · {ALUMNO.ruta}</Text>
+          <View style={{ flex: 1 }}>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Text style={styles.bienvenida}>{hijos.length > 1 ? 'Mis Hijos' : 'Hola'}</Text>
+              <View style={[styles.socketStatus, { backgroundColor: socketConectado ? THEME.success : THEME.error }]} />
             </View>
+            {hijos.length > 0 ? (
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.hijosSelector}>
+                  {hijos.map(h => (
+                    <TouchableOpacity
+                      key={h.id}
+                      onPress={() => setHijoSeleccionadoId(h.id)}
+                      style={[styles.hijoChip, hijoSeleccionadoId === h.id && styles.hijoChipActivo]}
+                    >
+                      <Users size={14} color={hijoSeleccionadoId === h.id ? '#fff' : 'rgba(255,255,255,0.6)'} style={{ marginRight: 6 }} />
+                      <Text style={[styles.hijoChipTexto, hijoSeleccionadoId === h.id && styles.hijoChipTextoActivo]}>
+                        {h.nombre.split(' ')[0]}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </ScrollView>
+                <TouchableOpacity
+                  style={styles.btnAddHijoHeader}
+                  onPress={() => setModalVincular(true)}
+                >
+                  <Plus size={18} color="#fff" strokeWidth={3} />
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <TouchableOpacity onPress={() => setModalVincular(true)}>
+                <Text style={styles.titulo}>{cargandoHijos ? 'Cargando...' : '+ Vincular hijo'}</Text>
+              </TouchableOpacity>
+            )}
+
+            {hijoSeleccionado && (
+              <View style={styles.subtituloRow}>
+                <User size={12} color="rgba(255,255,255,0.7)" strokeWidth={2} />
+                <Text style={[styles.subtitulo, !hijoSeleccionado.rutaId && { color: '#FFBABA', fontWeight: '700' }]}>
+                  {hijoSeleccionado?.grado} · {hijoSeleccionado?.rutaNombre || 'Ruta no asignada'}
+                </Text>
+              </View>
+            )}
           </View>
           <TouchableOpacity
             onPress={async () => {
@@ -513,53 +994,146 @@ export default function PantallaPadre({ navigation }) {
 
       {/* MAPA */}
       <View style={styles.mapaContainer}>
-        <MapView
-          ref={mapRef}
-          provider={PROVIDER_GOOGLE}
-          style={styles.mapa}
-          initialRegion={{ ...busPos, latitudeDelta: 0.01, longitudeDelta: 0.01 }}
-          showsUserLocation={true}
-          showsTraffic={true}
-          showsMyLocationButton={true}
-          onLongPress={puntoRecogidaBloqueado ? solicitarAutorizacionCambio : seleccionarPuntoRecogida}
-        >
-          <Marker coordinate={busPos} title="Bus escolar">
-            <View style={styles.busMarker}>
-              <Bus size={24} color={THEME.secondary} strokeWidth={2} />
+        {hijoSeleccionado && !hijoSeleccionado.rutaId && !cargandoHijos && (
+          <View style={styles.childNoRouteOverlay}>
+            <View style={styles.childNoRouteIcon}>
+              <AlertCircle size={18} color={THEME.warning} />
             </View>
-          </Marker>
-          <Marker
-            coordinate={puntoRecogida}
-            title="Punto de recogida"
-            description="Manten presionado el mapa para mover este punto"
-          >
-            <View style={styles.pickupMarker}>
-              <Home size={24} color={THEME.success} strokeWidth={2} />
+            <View style={styles.childNoRouteText}>
+              <Text style={styles.childNoRouteTitle}>Ruta no asignada</Text>
+              <Text style={styles.childNoRouteDesc} numberOfLines={2}>
+                {hijoSeleccionado.nombre.split(' ')[0]} no tiene bus. Usa "Vincular hijo" arriba con el código del conductor.
+              </Text>
             </View>
-          </Marker>
-          {historialRuta.length > 1 && (
-            <Polyline coordinates={historialRuta} strokeColor={THEME.secondary} strokeWidth={3} lineDashPattern={[5, 3]} />
-          )}
-        </MapView>
-
-        {mostrarPickupHint && !puntoRecogidaBloqueado && (
-          <View style={styles.pickupHint}>
-            <MapPin size={14} color={THEME.primary} strokeWidth={2} />
-            <Text style={styles.pickupHintTexto}>
-              Manten presionado el mapa para definir el punto exacto de recogida
-            </Text>
           </View>
         )}
 
-        {/* Badge estado - posición original conservada */}
-        <View style={[styles.estadoBadge, { borderColor: estadoColor, backgroundColor: THEME.surface }]}>
-          <View style={styles.estadoIconoContainer}>
-            {estadoIcono}
+        {cargandoHijos ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color={THEME.primary} />
+            <Text style={styles.loadingText}>Cargando información...</Text>
           </View>
-          <Text style={[styles.estadoTexto, { color: estadoColor }]}>{estadoTexto}</Text>
-        </View>
+        ) : (
+          <MapView
+            ref={mapRef}
+            provider={PROVIDER_GOOGLE}
+            style={styles.mapa}
+            initialRegion={{
+              latitude: Number(hijoSeleccionado?.latitude) || CASA_DEFAULT.latitude,
+              longitude: Number(hijoSeleccionado?.longitude) || CASA_DEFAULT.longitude,
+              latitudeDelta: 0.01,
+              longitudeDelta: 0.01
+            }}
+            showsUserLocation={true}
+            showsTraffic={true}
+            showsMyLocationButton={true}
+            onLongPress={hijoSeleccionado ? (puntoRecogidaBloqueado ? solicitarAutorizacionCambio : seleccionarPuntoRecogida) : undefined}
+          >
+            {/* Buses activos */}
+            {Object.entries(buses).map(([rutaId, pos]) => (
+              <Marker
+                key={rutaId}
+                coordinate={pos}
+                title={rutaId === 'global' ? 'Bus escolar' : `Bus Ruta ${rutaId}`}
+              >
+                <View style={[styles.busMarker, (hijoSeleccionado?.rutaId == rutaId) && styles.busMarkerSelected]}>
+                  <Bus size={24} color={(hijoSeleccionado?.rutaId == rutaId) ? THEME.secondary : THEME.textSecondary} strokeWidth={2} />
+                </View>
+              </Marker>
+            ))}
 
-        {/* Badge de tráfico en tiempo real */}
+            {/* Puntos de recogida de todos los hijos */}
+            {hijos.map((hijo) => (
+              hijo.latitude && hijo.longitude && (
+                <Marker
+                  key={`home-${hijo.id}`}
+                  coordinate={{ latitude: Number(hijo.latitude), longitude: Number(hijo.longitude) }}
+                  title={`Recogida ${hijo.nombre}`}
+                  onPress={() => setHijoSeleccionadoId(hijo.id)}
+                >
+                  <View style={[styles.pickupMarker, hijoSeleccionadoId === hijo.id && styles.pickupMarkerSelected]}>
+                    <Home size={24} color={hijoSeleccionadoId === hijo.id ? THEME.success : THEME.textSecondary} strokeWidth={2} />
+                  </View>
+                </Marker>
+              )
+            ))}
+
+            {historialRuta.length > 1 && (
+              <Polyline coordinates={historialRuta} strokeColor={THEME.secondary} strokeWidth={3} lineDashPattern={[5, 3]} />
+            )}
+          </MapView>
+        )}
+
+        {hijoSeleccionado && mostrarPickupHint && !puntoRecogidaBloqueado && !cargandoHijos && (
+          <View style={[styles.pickupHint, puntoSugeridoPorDireccion && styles.pickupHintSugerido]}>
+            <View style={styles.pickupHintHeader}>
+              <MapPin size={14} color={THEME.primary} strokeWidth={2} />
+              <Text style={styles.pickupHintTexto}>
+                {puntoSugeridoPorDireccion
+                  ? `Aproximamos el punto de ${hijoSeleccionado?.nombre.split(' ')[0]} con su direccion.`
+                  : 'Manten presionado el mapa para definir el punto exacto de recogida'}
+              </Text>
+            </View>
+            {puntoSugeridoPorDireccion && (
+              <>
+                {direccionSugerida ? (
+                  <Text style={styles.pickupDireccion} numberOfLines={2}>{direccionSugerida}</Text>
+                ) : null}
+                <View style={styles.pickupHintActions}>
+                  <TouchableOpacity
+                    style={[styles.pickupHintButton, styles.pickupHintButtonSecondary]}
+                    onPress={ajustarPuntoSugerido}
+                    disabled={guardandoPunto}
+                  >
+                    <Text style={styles.pickupHintButtonSecondaryText}>Ajustar</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.pickupHintButton, styles.pickupHintButtonPrimary]}
+                    onPress={confirmarPuntoSugerido}
+                    disabled={guardandoPunto}
+                  >
+                    {guardandoPunto ? (
+                      <ActivityIndicator color="#fff" size="small" />
+                    ) : (
+                      <Text style={styles.pickupHintButtonPrimaryText}>Confirmar</Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
+          </View>
+        )}
+
+        {/* Badge estado */}
+        {hijoSeleccionado && (
+          <View style={[styles.estadoBadge, { borderColor: estadoColor, backgroundColor: THEME.surface }]}>
+            <View style={styles.estadoIconoContainer}>
+              {estadoIcono}
+            </View>
+            <Text style={[styles.estadoTexto, { color: estadoColor }]}>{estadoTexto}</Text>
+          </View>
+        )}
+
+        {/* Badge abordado hoy */}
+        {hijoSeleccionado?.abordado && (
+          <View style={[styles.abordadoBadge, { backgroundColor: THEME.success }]}>
+            <Check size={14} color="#fff" strokeWidth={3} />
+            <Text style={styles.abordadoTexto}>Abordo hoy</Text>
+          </View>
+        )}
+
+        {/* Badge Cambio Programado Hoy */}
+        {hijoSeleccionado?.tieneProgramacionHoy && (
+          <View style={[styles.cambioHoyBadge, { backgroundColor: THEME.warning }]}>
+            <MapPin size={14} color="#fff" strokeWidth={3} />
+            <Text style={styles.cambioHoyTexto}>Cambio programado</Text>
+          </View>
+        )}
+
+        {/* Badge de clima (Prototipo) */}
+        {renderClima()}
+
+        {/* Badge de trafico en tiempo real */}
         {infoTrafico && rutaActiva && (
           <View style={[styles.traficoBadge, { backgroundColor: THEME.surface }]}>
             <Text style={styles.traficoLabel}>🚗 Tráfico</Text>
@@ -570,18 +1144,22 @@ export default function PantallaPadre({ navigation }) {
           </View>
         )}
 
-        {/* Botón ausencia flotante - posición original conservada, color conservado */}
-        {!ausenciaReportada ? (
+        {/* Botón ausencia flotante */}
+        {hijoSeleccionado && !ausenciaReportada && !rutaActiva ? (
           <TouchableOpacity style={styles.btnAusencia} onPress={() => setModalAusencia(true)}>
             <Text style={styles.btnAusenciaTexto}>No asiste hoy</Text>
           </TouchableOpacity>
-        ) : (
+        ) : hijoSeleccionado && !ausenciaReportada && rutaActiva ? (
+          <View style={[styles.btnAusencia, { backgroundColor: THEME.textSecondary, opacity: 0.7 }]}>
+            <Text style={styles.btnAusenciaTexto}>Ruta en curso</Text>
+          </View>
+        ) : hijoSeleccionado && ausenciaReportada && (
           <View style={[styles.btnAusencia, { backgroundColor: THEME.textSecondary }]}>
             <Text style={styles.btnAusenciaTexto}>Ausencia reportada</Text>
           </View>
         )}
 
-        {/* Botón voz flotante - posición original conservada */}
+        {/* Botón voz flotante */}
         <TouchableOpacity
           style={[styles.btnVoz, { backgroundColor: vozActivada ? THEME.primary : THEME.textSecondary }]}
           onPress={() => setVozActivada(!vozActivada)}
@@ -593,7 +1171,7 @@ export default function PantallaPadre({ navigation }) {
           )}
         </TouchableOpacity>
 
-        {/* Botón EMERGENCIA flotante - posición original conservada, color conservado */}
+        {/* Botón EMERGENCIA flotante */}
         {llamadasPermitidas && (
           <TouchableOpacity style={styles.btnEmergencia} onPress={llamadaEmergencia}>
             <AlertTriangle size={26} color="#fff" strokeWidth={2} fill={THEME.error} />
@@ -613,15 +1191,21 @@ export default function PantallaPadre({ navigation }) {
         <View style={styles.sheetTabs}>
           {[
             { key: 'info', label: 'Info', Icon: MapPin },
+            { key: 'calendario', label: 'Cambios', Icon: Clock },
             { key: 'historial', label: 'Historial', Icon: Clock },
             { key: 'llamar', label: 'Llamar', Icon: Phone },
+            { key: 'suscripcion', label: 'Plan', Icon: CreditCard },
           ].map(({ key, label, Icon }) => (
             <TouchableOpacity
               key={key}
               style={[styles.sheetTab, seccionSheet === key && styles.sheetTabActivo]}
-              onPress={() => { setSeccionSheet(key); abrirSheet(); }}
+              onPress={() => {
+                setSeccionSheet(key);
+                abrirSheet();
+                if (key === 'calendario') handleCargarCambios();
+              }}
             >
-              <Icon size={16} color={seccionSheet === key ? '#fff' : THEME.textSecondary} strokeWidth={2} />
+              <Icon size={14} color={seccionSheet === key ? '#fff' : THEME.textSecondary} strokeWidth={2} />
               <Text style={[styles.sheetTabTexto, seccionSheet === key && styles.sheetTabTextoActivo]}>
                 {label}
               </Text>
@@ -633,20 +1217,21 @@ export default function PantallaPadre({ navigation }) {
         <ScrollView style={styles.sheetContenido} showsVerticalScrollIndicator={false}>
 
           {/* Info */}
-          {seccionSheet === 'info' && (
+          {seccionSheet === 'info' && hijoSeleccionado && (
             <View>
               <View style={styles.infoSection}>
                 <View style={styles.infoRow}>
                   <Text style={styles.infoLabel}>Alumno</Text>
-                  <Text style={styles.infoValor}>{ALUMNO.nombre}</Text>
+                  <Text style={styles.infoValor}>{hijoSeleccionado?.nombre}</Text>
                 </View>
+
                 <View style={styles.infoRow}>
                   <Text style={styles.infoLabel}>Grado</Text>
-                  <Text style={styles.infoValor}>{ALUMNO.grado}</Text>
+                  <Text style={styles.infoValor}>{hijoSeleccionado?.grado}</Text>
                 </View>
                 <View style={styles.infoRow}>
                   <Text style={styles.infoLabel}>Ruta</Text>
-                  <Text style={styles.infoValor}>{ALUMNO.ruta}</Text>
+                  <Text style={styles.infoValor}>{hijoSeleccionado?.rutaNombre}</Text>
                 </View>
                 <View style={styles.infoRow}>
                   <Text style={styles.infoLabel}>Recogida</Text>
@@ -682,16 +1267,29 @@ export default function PantallaPadre({ navigation }) {
                   </TouchableOpacity>
                 </View>
                 <View style={styles.infoRow}>
-                  <Text style={styles.infoLabel}>Ausencia hoy</Text>
-                  <Text style={[styles.infoValor, { color: ausenciaReportada ? THEME.error : THEME.success }]}>
-                    {ausenciaReportada ? 'Reportada' : 'No reportada'}
+                  <Text style={styles.infoLabel}>Abordó hoy</Text>
+                  <Text style={[styles.infoValor, { color: hijoSeleccionado?.abordado ? THEME.success : THEME.textSecondary }]}>
+                    {hijoSeleccionado?.abordado ? 'Sí' : 'No aún'}
                   </Text>
                 </View>
               </View>
 
               <TouchableOpacity
+                style={styles.btnShareTracking}
+                onPress={handleGenerarInvitacion}
+                disabled={generandoInvitacion}
+              >
+                {generandoInvitacion ? (
+                  <ActivityIndicator color={THEME.secondary} size="small" />
+                ) : (
+                  <Users size={18} color={THEME.secondary} strokeWidth={2} />
+                )}
+                <Text style={styles.btnShareTrackingTexto}>Compartir seguimiento</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
                 style={styles.btnProbarVoz}
-                onPress={() => Speech.speak('Atención. El bus escolar llegará en 5 minutos. Por favor prepara a tu hijo.', { language: 'es-MX', rate: 0.85 })}
+                onPress={() => Speech.speak(`Atención. El bus de ${hijoSeleccionado?.nombre?.split(' ')[0]} llegará en 5 minutos.`, { language: 'es-MX', rate: 0.85 })}
               >
                 <Volume2 size={18} color={THEME.primary} strokeWidth={2} />
                 <Text style={styles.btnProbarVozTexto}>Probar aviso de voz</Text>
@@ -705,42 +1303,132 @@ export default function PantallaPadre({ navigation }) {
             </View>
           )}
 
-          {/* Historial */}
+          {/* Calendario / Cambios */}
+          {seccionSheet === 'calendario' && (
+            <View>
+              <View style={styles.headerCalendario}>
+                <Text style={styles.sheetSeccionTitulo}>Cambios Programados</Text>
+                <TouchableOpacity style={styles.btnNuevoCambio} onPress={() => setModalNuevoCambio(true)}>
+                  <Plus size={16} color="#fff" strokeWidth={3} />
+                  <Text style={styles.btnNuevoCambioTexto}>Nuevo</Text>
+                </TouchableOpacity>
+              </View>
+
+              {cargandoCambios ? (
+                <ActivityIndicator color={THEME.primary} style={{ marginTop: 20 }} />
+              ) : cambiosProgramados.length === 0 ? (
+                <View style={styles.emptyCambios}>
+                  <Clock size={40} color={THEME.border} />
+                  <Text style={styles.emptyCambiosTexto}>No hay cambios programados a futuro.</Text>
+                </View>
+              ) : (
+                cambiosProgramados.map((cambio) => (
+                  <View key={cambio.id} style={styles.cambioCard}>
+                    <View style={styles.cambioHeader}>
+                      <View style={styles.cambioFechaContainer}>
+                        <Clock size={14} color={THEME.secondary} />
+                        <Text style={styles.cambioFecha}>{new Date(cambio.fecha).toLocaleDateString('es-SV', { weekday: 'short', day: 'numeric', month: 'short' })}</Text>
+                      </View>
+                      <TouchableOpacity onPress={() => handleEliminarCambio(cambio.id)}>
+                        <X size={18} color={THEME.error} />
+                      </TouchableOpacity>
+                    </View>
+                    <Text style={styles.cambioHijo}>{cambio.alumno_nombre}</Text>
+                    <View style={styles.cambioDetalleRow}>
+                      <MapPin size={14} color={THEME.textSecondary} />
+                      <Text style={styles.cambioParada}>{cambio.parada}</Text>
+                    </View>
+                    {cambio.nota && (
+                      <Text style={styles.cambioNota}>Nota: {cambio.nota}</Text>
+                    )}
+                    <View style={styles.cambioTipoBadge}>
+                      <Text style={styles.cambioTipoTexto}>{cambio.tipo.toUpperCase()}</Text>
+                    </View>
+                  </View>
+                ))
+              )}
+            </View>
+          )}
+
+          {/* Historial / Bitácora de Viaje */}
           {seccionSheet === 'historial' && (
             <View>
-              <Text style={styles.sheetSeccionTitulo}>Últimos viajes</Text>
-              {historialViajes.map((viaje, i) => (
-                <View key={i} style={styles.viajeRow}>
-                  <View style={[styles.viajeIcono, {
-                    backgroundColor: viaje.estado === 'Completado' ? '#F0FDF4' : '#FFF8E1',
-                    borderColor: viaje.estado === 'Completado' ? '#DCFCE7' : '#FEF3C7',
-                  }]}>
-                    {viaje.estado === 'Completado' ? (
-                      <Check size={20} color={THEME.success} strokeWidth={3} />
-                    ) : (
-                      <Clock size={20} color={THEME.warning} strokeWidth={2} />
-                    )}
-                  </View>
-                  <View style={styles.viajeInfo}>
-                    <Text style={styles.viajeFecha}>{viaje.fecha}</Text>
-                    <Text style={styles.viajeDetalle}>Salida: {viaje.hora} · {viaje.alumnos} alumnos</Text>
-                  </View>
-                  <View style={[styles.viajeBadge, {
-                    backgroundColor: viaje.estado === 'Completado' ? '#F0FDF4' : '#FFF8E1',
-                  }]}>
-                    <Text style={[styles.viajeBadgeTexto, {
-                      color: viaje.estado === 'Completado' ? THEME.success : THEME.warning
-                    }]}>
-                      {viaje.estado}
-                    </Text>
-                  </View>
+              <Text style={styles.sheetSeccionTitulo}>Bitácora y Viajes</Text>
+              {historialViajes.length === 0 ? (
+                <View style={styles.emptyCambios}>
+                  <Activity size={40} color={THEME.border} />
+                  <Text style={styles.emptyCambiosTexto}>No hay actividad registrada hoy.</Text>
                 </View>
-              ))}
+              ) : (
+                historialViajes.map((viaje, i) => (
+                  <View key={i} style={styles.viajeRow}>
+                    <View style={[styles.viajeIcono, {
+                      backgroundColor: viaje.estado === 'Completado' ? '#F0FDF4' :
+                        viaje.estado === 'Evento' ? '#EFF6FF' : '#FFF8E1',
+                      borderColor: viaje.estado === 'Completado' ? '#DCFCE7' :
+                        viaje.estado === 'Evento' ? '#DBEAFE' : '#FEF3C7',
+                    }]}>
+                      {viaje.estado === 'Completado' ? (
+                        <Check size={20} color={THEME.success} strokeWidth={3} />
+                      ) : viaje.estado === 'Evento' ? (
+                        <Bell size={20} color={THEME.secondary} strokeWidth={2} />
+                      ) : (
+                        <Clock size={20} color={THEME.warning} strokeWidth={2} />
+                      )}
+                    </View>
+                    <View style={styles.viajeInfo}>
+                      <Text style={styles.viajeFecha}>{viaje.fecha} · {viaje.hora}</Text>
+                      <Text style={[styles.viajeDetalle, viaje.estado === 'Evento' && { color: THEME.text, fontWeight: '600' }]}>
+                        {viaje.texto || `Salida: ${viaje.hora} · ${viaje.alumnos} alumnos`}
+                      </Text>
+                    </View>
+                    <View style={[styles.viajeBadge, {
+                      backgroundColor: viaje.estado === 'Completado' ? '#F0FDF4' :
+                        viaje.estado === 'Evento' ? '#EFF6FF' : '#FFF8E1',
+                    }]}>
+                      <Text style={[styles.viajeBadgeTexto, {
+                        color: viaje.estado === 'Completado' ? THEME.success :
+                          viaje.estado === 'Evento' ? THEME.secondary : THEME.warning
+                      }]}>
+                        {viaje.estado}
+                      </Text>
+                    </View>
+                  </View>
+                ))
+              )}
+            </View>
+          )}
+
+          {/* Suscripcion */}
+          {seccionSheet === 'suscripcion' && hijoSeleccionado && (
+            <View>
+              <Text style={styles.sheetSeccionTitulo}>Mi Suscripción</Text>
+              <View style={styles.infoSection}>
+                <View style={styles.infoRow}>
+                  <Text style={styles.infoLabel}>Plan actual</Text>
+                  <Text style={[styles.infoValor, { color: THEME.secondary }]}>Servicio Escolar</Text>
+                </View>
+                <View style={styles.infoRow}>
+                  <Text style={styles.infoLabel}>Fecha inicio</Text>
+                  <Text style={styles.infoValor}>{hijoSeleccionado?.fechaInicio || 'No definida'}</Text>
+                </View>
+                <View style={styles.infoRow}>
+                  <Text style={styles.infoLabel}>Fecha finalización</Text>
+                  <Text style={styles.infoValor}>{hijoSeleccionado?.fechaFin || 'No definida'}</Text>
+                </View>
+                <View style={styles.infoRow}>
+                  <Text style={styles.infoLabel}>Estado de pago</Text>
+                  <Text style={[styles.infoValor, { color: THEME.success }]}>Al día</Text>
+                </View>
+              </View>
+              <Text style={styles.notaLlamada}>
+                Tu cobro está asociado a las fechas de funcionamiento elegidas durante el registro.
+              </Text>
             </View>
           )}
 
           {/* Llamar */}
-          {seccionSheet === 'llamar' && (
+          {seccionSheet === 'llamar' && hijoSeleccionado && (
             <View>
               <Text style={styles.sheetSeccionTitulo}>Contactar conductor</Text>
 
@@ -751,9 +1439,9 @@ export default function PantallaPadre({ navigation }) {
                       <User size={28} color={THEME.secondary} strokeWidth={1.5} />
                     </View>
                     <View style={{ flex: 1 }}>
-                      <Text style={styles.conductorNombre}>Luis Conductor</Text>
+                      <Text style={styles.conductorNombre}>{hijoSeleccionado?.conductorNombre || 'Conductor'}</Text>
                       <Text style={styles.conductorTel}>{telefonoConductor}</Text>
-                      <Text style={styles.conductorRuta}>{ALUMNO.ruta}</Text>
+                      <Text style={styles.conductorRuta}>{hijoSeleccionado?.rutaNombre}</Text>
                     </View>
                   </View>
 
@@ -800,28 +1488,189 @@ export default function PantallaPadre({ navigation }) {
                 <X size={24} color={THEME.textSecondary} strokeWidth={2} />
               </TouchableOpacity>
             </View>
-            <Text style={styles.modalSubtitulo}>{ALUMNO.nombre} no irá hoy al colegio</Text>
+            <Text style={styles.modalSubtitulo}>
+              Informa al conductor que {hijoSeleccionado?.nombre.split(' ')[0]} no asistirá hoy para optimizar la ruta.
+            </Text>
 
+            <Text style={styles.labelField}>Motivo (Opcional)</Text>
             <TextInput
               style={styles.input}
-              placeholder="Motivo (opcional)"
+              placeholder="Ej: Se siente mal, viaje familiar..."
               value={motivoAusencia}
               onChangeText={setMotivoAusencia}
               multiline
-              placeholderTextColor={THEME.textSecondary}
             />
 
             <View style={styles.modalBotones}>
-              <TouchableOpacity style={styles.modalBtnCancelar} onPress={() => setModalAusencia(false)}>
+              <TouchableOpacity
+                style={styles.modalBtnCancelar}
+                onPress={() => setModalAusencia(false)}
+                disabled={loadingAusencia}
+              >
                 <Text style={styles.modalBtnCancelarTexto}>Cancelar</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={styles.modalBtnConfirmar} onPress={reportarAusencia} disabled={loadingAusencia}>
-                {loadingAusencia
-                  ? <ActivityIndicator color="#fff" />
-                  : <Text style={styles.modalBtnConfirmarTexto}>Confirmar</Text>
-                }
+              <TouchableOpacity
+                style={[styles.modalBtnConfirmar, { backgroundColor: THEME.error }]}
+                onPress={reportarAusencia}
+                disabled={loadingAusencia}
+              >
+                {loadingAusencia ? (
+                  <ActivityIndicator color="#fff" size="small" />
+                ) : (
+                  <Text style={styles.modalBtnConfirmarTexto}>Confirmar</Text>
+                )}
               </TouchableOpacity>
             </View>
+          </View>
+        </View>
+      </Modal>
+
+      {/* MODAL VINCULAR HIJO */}
+      <Modal visible={modalVincular} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalCard, { maxHeight: '85%' }]}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitulo}>Vincular estudiante</Text>
+              <TouchableOpacity onPress={() => setModalVincular(false)} style={styles.modalCloseBtn}>
+                <X size={24} color={THEME.textSecondary} strokeWidth={2} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false}>
+              <Text style={styles.modalSubtitulo}>
+                Ingresa el código que te proporcionó el conductor o el colegio.
+              </Text>
+
+              <Text style={styles.labelField}>Código de vinculación</Text>
+              <TextInput
+                style={[styles.modalInput, { fontSize: 20, textAlign: 'center', letterSpacing: 2, color: THEME.secondary }]}
+                placeholder="EJ: BUS-1234"
+                value={codigoVinculacion}
+                onChangeText={setCodigoVinculacion}
+                autoCapitalize="characters"
+              />
+
+              <View style={styles.modalBotones}>
+                <TouchableOpacity
+                  style={styles.modalBtnCancelar}
+                  onPress={() => setModalVincular(false)}
+                  disabled={loadingVincular}
+                >
+                  <Text style={styles.modalBtnCancelarTexto}>Cancelar</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.modalBtnConfirmar, { backgroundColor: THEME.secondary }]}
+                  onPress={handleVincularHijo}
+                  disabled={loadingVincular}
+                >
+                  {loadingVincular ? (
+                    <ActivityIndicator color="#fff" size="small" />
+                  ) : (
+                    <Text style={styles.modalBtnConfirmarTexto}>Vincular</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
+
+      {/* MODAL INVITACION PADRE */}
+      <Modal visible={mostrarModalInvitacion} transparent animationType="fade">
+        <View style={styles.modalOverlayCenter}>
+          <View style={styles.modalCardCenter}>
+            <Users size={40} color={THEME.secondary} style={{ alignSelf: 'center', marginBottom: 16 }} />
+            <Text style={styles.modalTituloCenter}>Compartir seguimiento</Text>
+            <Text style={styles.modalSubtituloCenter}>
+              Entrega este código a la otra persona para que pueda seguir el bus de {hijoSeleccionado?.nombre.split(' ')[0]}.
+            </Text>
+
+            <View style={styles.codigoContainer}>
+              <Text style={styles.codigoTexto}>{codigoInvitacion}</Text>
+            </View>
+
+            <Text style={styles.codigoAviso}>Válido por 48 horas</Text>
+
+            <TouchableOpacity
+              style={[styles.modalBtnConfirmar, { width: '100%', marginTop: 20 }]}
+              onPress={() => setMostrarModalInvitacion(false)}
+            >
+              <Text style={styles.modalBtnConfirmarTexto}>Entendido</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* MODAL NUEVO CAMBIO PROGRAMADO */}
+      <Modal visible={modalNuevoCambio} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalCard, { height: '80%' }]}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitulo}>Programar cambio</Text>
+              <TouchableOpacity onPress={() => setModalNuevoCambio(false)} style={styles.modalCloseBtn}>
+                <X size={24} color={THEME.textSecondary} strokeWidth={2} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false}>
+              <Text style={styles.labelField}>Estudiante</Text>
+              <View style={styles.readOnlyField}>
+                <Text style={styles.readOnlyText}>{hijoSeleccionado?.nombre}</Text>
+              </View>
+
+              <Text style={styles.labelField}>Fecha del cambio</Text>
+              <TextInput
+                style={styles.modalInput}
+                type="date"
+                value={datosNuevoCambio.fecha}
+                onChangeText={(v) => setDatosNuevoCambio({ ...datosNuevoCambio, fecha: v })}
+                placeholder="AAAA-MM-DD"
+              />
+
+              <Text style={styles.labelField}>Tipo de trayecto</Text>
+              <View style={styles.tipoSelector}>
+                {['recogida', 'devolucion', 'ambos'].map((t) => (
+                  <TouchableOpacity
+                    key={t}
+                    style={[styles.tipoOption, datosNuevoCambio.tipo === t && styles.tipoOptionActiva]}
+                    onPress={() => setDatosNuevoCambio({ ...datosNuevoCambio, tipo: t })}
+                  >
+                    <Text style={[styles.tipoOptionText, datosNuevoCambio.tipo === t && styles.tipoOptionTextActivo]}>
+                      {t.charAt(0).toUpperCase() + t.slice(1)}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <Text style={styles.labelField}>Nueva parada / Direccion</Text>
+              <TextInput
+                style={styles.modalInput}
+                placeholder="Ej: Casa de la abuela"
+                value={datosNuevoCambio.parada}
+                onChangeText={(v) => setDatosNuevoCambio({ ...datosNuevoCambio, parada: v })}
+              />
+
+              <Text style={styles.labelField}>Nota para el conductor</Text>
+              <TextInput
+                style={[styles.modalInput, { height: 80, textAlignVertical: 'top' }]}
+                placeholder="Ej: Se queda con su tia hoy"
+                multiline
+                value={datosNuevoCambio.nota}
+                onChangeText={(v) => setDatosNuevoCambio({ ...datosNuevoCambio, nota: v })}
+              />
+
+              <View style={styles.modalBotones}>
+                <TouchableOpacity style={styles.modalBtnCancelar} onPress={() => setModalNuevoCambio(false)}>
+                  <Text style={styles.modalBtnCancelarTexto}>Cancelar</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.modalBtnConfirmar, { backgroundColor: THEME.secondary }]}
+                  onPress={handleCrearCambio}
+                >
+                  <Text style={styles.modalBtnConfirmarTexto}>Programar</Text>
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -852,6 +1701,11 @@ const styles = StyleSheet.create({
     fontWeight: '500',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
+  },
+  socketStatus: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
   },
   titulo: {
     fontSize: 22,
@@ -1052,6 +1906,11 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderWidth: 1,
     borderColor: THEME.border,
+  },
+  pickupHintSugerido: {
+    paddingVertical: 12,
+  },
+  pickupHintHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
@@ -1061,6 +1920,43 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: THEME.text,
     fontWeight: '600',
+  },
+  pickupDireccion: {
+    marginTop: 8,
+    fontSize: 11,
+    color: THEME.textSecondary,
+    fontWeight: '600',
+  },
+  pickupHintActions: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 10,
+  },
+  pickupHintButton: {
+    flex: 1,
+    minHeight: 38,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 10,
+  },
+  pickupHintButtonPrimary: {
+    backgroundColor: THEME.primary,
+  },
+  pickupHintButtonSecondary: {
+    backgroundColor: THEME.background,
+    borderWidth: 1,
+    borderColor: THEME.border,
+  },
+  pickupHintButtonPrimaryText: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  pickupHintButtonSecondaryText: {
+    color: THEME.primary,
+    fontSize: 13,
+    fontWeight: '800',
   },
 
   // Bottom Sheet
@@ -1088,18 +1984,20 @@ const styles = StyleSheet.create({
 
   sheetTabs: {
     flexDirection: 'row',
-    paddingHorizontal: 16,
-    gap: 10,
-    marginBottom: 12,
+    paddingHorizontal: 8,
+    gap: 5,
+    marginBottom: 8,
   },
   sheetTab: {
     flex: 1,
-    flexDirection: 'row',
+    minHeight: 46,
+    flexDirection: 'column',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 10,
-    borderRadius: 10,
+    gap: 3,
+    paddingVertical: 7,
+    paddingHorizontal: 2,
+    borderRadius: 9,
     backgroundColor: THEME.background,
     borderWidth: 1,
     borderColor: THEME.border,
@@ -1109,9 +2007,10 @@ const styles = StyleSheet.create({
     borderColor: THEME.primary,
   },
   sheetTabTexto: {
-    fontSize: 13,
+    fontSize: 9,
     color: THEME.textSecondary,
-    fontWeight: '600',
+    fontWeight: '800',
+    textAlign: 'center',
   },
   sheetTabTextoActivo: {
     color: '#fff',
@@ -1433,5 +2332,596 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: '#fff',
     fontWeight: '700',
+  },
+
+  // Selector de hijos
+  hijosSelector: {
+    flexDirection: 'row',
+    marginTop: 8,
+    marginBottom: 4,
+  },
+  hijoChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+    marginRight: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
+  },
+  hijoChipActivo: {
+    backgroundColor: THEME.secondary,
+    borderColor: THEME.secondary,
+  },
+  hijoChipTexto: {
+    color: 'rgba(255,255,255,0.7)',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  hijoChipTextoActivo: {
+    color: '#fff',
+    fontWeight: '700',
+  },
+
+  // Loading
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: THEME.background,
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 14,
+    color: THEME.textSecondary,
+    fontWeight: '500',
+  },
+
+  // Markers extras
+  busMarkerSelected: {
+    borderColor: THEME.secondary,
+    transform: [{ scale: 1.1 }],
+    zIndex: 10,
+  },
+  pickupMarkerSelected: {
+    borderColor: THEME.success,
+    transform: [{ scale: 1.1 }],
+    zIndex: 10,
+  },
+
+  // Abordado badge
+  abordadoBadge: {
+    position: 'absolute',
+    top: 56,
+    left: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  abordadoTexto: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+
+  // Clima Badge
+  climaBadge: {
+    position: 'absolute',
+    top: 98,
+    left: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+    maxWidth: '60%',
+    borderWidth: 1,
+    borderColor: THEME.border,
+  },
+  climaIconContainer: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  climaInfo: {
+    flex: 1,
+  },
+  climaTemp: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: THEME.text,
+  },
+  climaMensaje: {
+    fontSize: 10,
+    color: THEME.textSecondary,
+    fontWeight: '600',
+    marginTop: -2,
+  },
+  climaTouchArea: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    flex: 1,
+  },
+
+  // Estilos vinculacion y vacios
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 32,
+    backgroundColor: THEME.background,
+  },
+  emptyTitle: {
+    fontSize: 22,
+    fontWeight: '800',
+    color: THEME.text,
+    marginTop: 20,
+    textAlign: 'center',
+  },
+  emptySubtitle: {
+    fontSize: 15,
+    color: THEME.textSecondary,
+    textAlign: 'center',
+    marginTop: 8,
+    marginBottom: 32,
+    lineHeight: 22,
+  },
+  emptyMapCard: {
+    position: 'absolute',
+    top: 12,
+    left: 12,
+    right: 12,
+    minHeight: 72,
+    backgroundColor: 'rgba(255,255,255,0.96)',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    borderWidth: 1,
+    borderColor: THEME.border,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.12,
+    shadowRadius: 5,
+    elevation: 5,
+  },
+  emptyMapIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: '#EEF2FF',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  emptyMapText: {
+    flex: 1,
+  },
+  emptyMapTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: THEME.text,
+  },
+  emptyMapSubtitle: {
+    fontSize: 11,
+    color: THEME.textSecondary,
+    lineHeight: 15,
+    marginTop: 2,
+    fontWeight: '500',
+  },
+  emptyMapButton: {
+    minHeight: 34,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    backgroundColor: THEME.secondary,
+    paddingHorizontal: 10,
+    borderRadius: 9,
+  },
+  emptyMapButtonText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  btnVincularGrande: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 24,
+    paddingVertical: 16,
+    borderRadius: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  btnVincularGrandeTexto: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  btnAddHijoHeader: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginLeft: 12,
+    marginTop: 8,
+  },
+  modalInput: {
+    backgroundColor: THEME.background,
+    borderWidth: 1,
+    borderColor: THEME.border,
+    borderRadius: 12,
+    padding: 14,
+    fontSize: 15,
+    color: THEME.text,
+    fontWeight: '600',
+    marginBottom: 16,
+  },
+  labelField: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: THEME.textSecondary,
+    marginBottom: 6,
+    marginLeft: 4,
+    textTransform: 'uppercase',
+  },
+  // Nuevos estilos Gobernanza Flexible
+  bannerVinculacion: {
+    position: 'absolute',
+    top: 10,
+    left: 10,
+    right: 10,
+    backgroundColor: THEME.primary,
+    borderRadius: 14,
+    padding: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    zIndex: 100,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    elevation: 8,
+  },
+  bannerVinculacionContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    flex: 1,
+  },
+  bannerVinculacionTextContainer: {
+    flex: 1,
+  },
+  bannerVinculacionTitulo: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  bannerVinculacionDesc: {
+    color: 'rgba(255,255,255,0.7)',
+    fontSize: 11,
+    fontWeight: '500',
+  },
+  bannerVinculacionBtn: {
+    backgroundColor: THEME.secondary,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 10,
+    marginLeft: 10,
+  },
+  bannerVinculacionBtnText: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  childNoRouteOverlay: {
+    position: 'absolute',
+    top: 12,
+    left: 12,
+    right: 12,
+    minHeight: 72,
+    backgroundColor: 'rgba(255,255,255,0.96)',
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    borderWidth: 1,
+    borderColor: '#FED7AA',
+    zIndex: 15,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.12,
+    shadowRadius: 5,
+    elevation: 5,
+  },
+  childNoRouteIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: '#FFF7ED',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  childNoRouteText: {
+    flex: 1,
+  },
+  childNoRouteTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: THEME.text,
+  },
+  childNoRouteDesc: {
+    fontSize: 11,
+    color: THEME.textSecondary,
+    marginTop: 2,
+    lineHeight: 15,
+    fontWeight: '500',
+  },
+  childNoRouteBtn: {
+    backgroundColor: THEME.secondary,
+    minHeight: 34,
+    justifyContent: 'center',
+    paddingHorizontal: 10,
+    borderRadius: 9,
+    shadowColor: THEME.secondary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  childNoRouteBtnText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  // Multi-padre y Cambios
+  btnShareTracking: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: '#EEF2FF',
+    padding: 14,
+    borderRadius: 12,
+    marginTop: 12,
+    borderWidth: 1,
+    borderColor: '#C7D2FE',
+    justifyContent: 'center',
+  },
+  btnShareTrackingTexto: {
+    color: THEME.secondary,
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  headerCalendario: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  btnNuevoCambio: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: THEME.secondary,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+  },
+  btnNuevoCambioTexto: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  emptyCambios: {
+    alignItems: 'center',
+    padding: 30,
+    marginTop: 20,
+    gap: 12,
+  },
+  emptyCambiosTexto: {
+    color: THEME.textSecondary,
+    fontSize: 14,
+    textAlign: 'center',
+    fontWeight: '500',
+  },
+  cambioCard: {
+    backgroundColor: THEME.background,
+    borderRadius: 14,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: THEME.border,
+  },
+  cambioHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  cambioFechaContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  cambioFecha: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: THEME.secondary,
+    textTransform: 'capitalize',
+  },
+  cambioHijo: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: THEME.text,
+    marginBottom: 4,
+  },
+  cambioDetalleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 4,
+  },
+  cambioParada: {
+    fontSize: 13,
+    color: THEME.textSecondary,
+    fontWeight: '600',
+  },
+  cambioNota: {
+    fontSize: 12,
+    color: THEME.textSecondary,
+    fontStyle: 'italic',
+    marginTop: 4,
+  },
+  cambioTipoBadge: {
+    position: 'absolute',
+    bottom: 12,
+    right: 12,
+    backgroundColor: 'rgba(0,0,0,0.05)',
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  cambioTipoTexto: {
+    fontSize: 9,
+    fontWeight: '900',
+    color: THEME.textSecondary,
+  },
+  cambioHoyBadge: {
+    position: 'absolute',
+    top: 56,
+    right: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  cambioHoyTexto: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  modalOverlayCenter: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 24,
+  },
+  modalCardCenter: {
+    backgroundColor: THEME.surface,
+    borderRadius: 24,
+    padding: 24,
+    width: '100%',
+    maxWidth: 340,
+  },
+  modalTituloCenter: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: THEME.text,
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  modalSubtituloCenter: {
+    fontSize: 14,
+    color: THEME.textSecondary,
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 24,
+  },
+  codigoContainer: {
+    backgroundColor: THEME.background,
+    borderRadius: 16,
+    padding: 20,
+    borderWidth: 2,
+    borderColor: THEME.secondary,
+    borderStyle: 'dashed',
+    alignItems: 'center',
+  },
+  codigoTexto: {
+    fontSize: 32,
+    fontWeight: '900',
+    color: THEME.secondary,
+    letterSpacing: 4,
+  },
+  codigoAviso: {
+    fontSize: 11,
+    color: THEME.textSecondary,
+    textAlign: 'center',
+    marginTop: 12,
+    fontWeight: '600',
+  },
+  readOnlyField: {
+    backgroundColor: THEME.background,
+    padding: 14,
+    borderRadius: 12,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: THEME.border,
+  },
+  readOnlyText: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: THEME.textSecondary,
+  },
+  tipoSelector: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 16,
+  },
+  tipoOption: {
+    flex: 1,
+    paddingVertical: 10,
+    borderRadius: 10,
+    backgroundColor: THEME.background,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: THEME.border,
+  },
+  tipoOptionActiva: {
+    backgroundColor: THEME.secondary,
+    borderColor: THEME.secondary,
+  },
+  tipoOptionText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: THEME.textSecondary,
+  },
+  tipoOptionTextActivo: {
+    color: '#fff',
   },
 });

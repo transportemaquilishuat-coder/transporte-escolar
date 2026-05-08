@@ -1,5 +1,9 @@
 import { useState, useCallback } from 'react';
-import { verificarCodigo, registroConCodigo } from '../services/vinculacionesService';
+import {
+  verificarCodigo,
+  registrarUsuario,
+  registrarUsuarioConCodigo,
+} from '../services/vinculacionesService';
 
 export const useRegistroCodigo = () => {
   const [loading, setLoading] = useState(false);
@@ -27,7 +31,12 @@ export const useRegistroCodigo = () => {
   }, [ejecutar]);
 
   const registrar = useCallback(async (datos) => {
-    const resultado = await ejecutar(registroConCodigo, datos);
+    const resultado = await ejecutar(registrarUsuario, datos);
+    return resultado;
+  }, [ejecutar]);
+
+  const registrarConCodigo = useCallback(async (datos) => {
+    const resultado = await ejecutar(registrarUsuarioConCodigo, datos);
     return resultado;
   }, [ejecutar]);
 
@@ -37,5 +46,6 @@ export const useRegistroCodigo = () => {
     infoCodigo,
     verificar,
     registrar,
+    registrarConCodigo,
   };
 };

@@ -2,8 +2,7 @@ import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import { Platform } from 'react-native';
 import Constants from 'expo-constants';
-
-const API_URL = 'https://transporte-backend-production.up.railway.app/api';
+import { API_URL } from './apiConfig';
 
 // Configurar cómo se muestran las notificaciones
 Notifications.setNotificationHandler({
@@ -27,11 +26,22 @@ const obtenerExpoPushToken = async () => {
     }
 
     const projectId = obtenerProjectId();
-    const respuesta = projectId
-        ? await Notifications.getExpoPushTokenAsync({ projectId })
-        : await Notifications.getExpoPushTokenAsync();
+    
+    // Si no hay projectId (común en desarrollo sin EAS configurado), evitar llamar a la API que lanza el warning
+    if (!projectId && !Constants.expoConfig?.extra?.eas?.projectId) {
+        console.log('Aviso: Saltando registro de notificaciones remotas (Falta projectId).');
+        return null;
+    }
 
-    return respuesta?.data || null;
+    try {
+        const respuesta = await Notifications.getExpoPushTokenAsync({
+            projectId: projectId || Constants.expoConfig?.extra?.eas?.projectId
+        });
+        return respuesta?.data || null;
+    } catch (e) {
+        console.log('Error obteniendo token push:', e.message);
+        return null;
+    }
 };
 
 const guardarTokenEnBackend = async ({ usuarioId, expoPushToken, tokenSesion }) => {
@@ -99,7 +109,7 @@ export const registrarNotificaciones = async (usuarioId, tokenSesion) => {
         // Canal para Android
         if (Platform.OS === 'android') {
             await Notifications.setNotificationChannelAsync('transporte', {
-                name: 'kidGo',
+                name: 'KidsGo!',
                 importance: Notifications.AndroidImportance.MAX,
                 vibrationPattern: [0, 250, 250, 250],
                 sound: true,

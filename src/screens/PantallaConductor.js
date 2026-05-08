@@ -3,22 +3,54 @@ import socket from '../config/socket';
 import { useState, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
-  ActivityIndicator, StatusBar, Dimensions, Modal, TextInput, Alert, Animated, Easing
+  ActivityIndicator, StatusBar, Modal, TextInput, Alert, Animated, Easing
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
+import { useKeepAwake } from 'expo-keep-awake';
 import {
-  Play, Square, MapPin, Users, GraduationCap, User,
+  Play, Square, MapPin, Users, GraduationCap,
   Clock, AlertCircle, Check, X, Plus, Trash2,
-  LogOut, ChevronRight, Activity, Navigation
+  LogOut, Activity, Navigation, KeyRound
 } from 'lucide-react-native';
 import { useBranding } from '../hooks/useBranding';
-import { limpiarSesion, obtenerToken, obtenerUsuario } from '../services/session';
+import { cargarSesionPersistida, limpiarSesion, obtenerToken, obtenerUsuario } from '../services/session';
 
-const SERVIDOR = 'https://transporte-backend-production.up.railway.app';
+import { API_BASE_URL } from '../services/apiConfig';
+
+const SERVIDOR = API_BASE_URL;
+const GOOGLE_API_KEY = 'AIzaSyDVaVcUL_e_lO0nD29QUfOfl0u3RUUFEdM';
 const CONDUCTOR_ID_DEMO = 2;
-const RADIO_AUTO_ABORDAJE_METROS = 60;
-const { width, height } = Dimensions.get('window');
+const RADIO_AUTO_ABORDAJE_METROS = 100;
+
+// Función para obtener ETA real usando Google Directions API
+const obtenerETADeGoogle = async (origen, destino) => {
+  try {
+    const origenStr = `${origen.latitude},${origen.longitude}`;
+    const destinoStr = `${destino.latitude},${destino.longitude}`;
+    const url = `https://maps.googleapis.com/maps/api/directions/json?origin=${origenStr}&destination=${destinoStr}&key=${GOOGLE_API_KEY}&language=es`;
+
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000);
+
+    const response = await fetch(url, { signal: controller.signal });
+    clearTimeout(timeoutId);
+
+    if (!response.ok) return null;
+    const data = await response.json();
+
+    if (data.status === 'OK' && data.routes.length > 0) {
+      const leg = data.routes[0].legs[0];
+      return {
+        minutos: Math.round(leg.duration.value / 60),
+        distancia: leg.distance.text
+      };
+    }
+    return null;
+  } catch (error) {
+    return null;
+  }
+};
 
 // Tema Gris Elegante - Sofisticado y moderno
 const THEME = {
@@ -42,11 +74,21 @@ const obtenerAuthHeaders = async () => {
 
 export default function PantallaConductor({ navigation }) {
   const { branding } = useBranding();
+  useKeepAwake();
+
   // ========== ESTADOS ==========
-  const [conductorId, setConductorId] = useState(obtenerUsuario()?.id || CONDUCTOR_ID_DEMO);
+  const [conductorId, setConductorId] = useState(obtenerUsuario()?.id || null);
   const [rutaActiva, setRutaActiva] = useState(false);
+  const [socketConectado, setSocketConectado] = useState(socket.connected);
   const [eventos, setEventos] = useState([]);
   const [ubicacion, setUbicacion] = useState(null);
+  const [usuario, setUsuario] = useState(obtenerUsuario());
+
+  useEffect(() => {
+    const user = obtenerUsuario();
+    if (user) setUsuario(user);
+  }, []);
+
   const [alumnos, setAlumnos] = useState([]);
   const [rutas, setRutas] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -67,26 +109,36 @@ export default function PantallaConductor({ navigation }) {
   const [desvioActivo, setDesvioActivo] = useState(false);
   const [distanciaDesvio, setDistanciaDesvio] = useState(0);
   const avisoAusentesAnim = useRef(new Animated.Value(0)).current;
+  const alertasProximidadEnviadasRef = useRef(new Set());
 
-  // ========== EFFECTS ==========
+  useEffect(() => {
+    const onConnect = () => setSocketConectado(true);
+    const onDisconnect = () => setSocketConectado(false);
+
+    socket.on('connect', onConnect);
+    socket.on('disconnect', onDisconnect);
+
+    return () => {
+      socket.off('connect', onConnect);
+      socket.off('disconnect', onDisconnect);
+    };
+  }, []);
+
   useEffect(() => {
     const cargarConductorSesion = async () => {
       const usuarioMemoria = obtenerUsuario();
       if (usuarioMemoria?.id) {
+        setUsuario(usuarioMemoria);
         setConductorId(usuarioMemoria.id);
         return;
       }
 
-      const rawUsuario = await AsyncStorage.getItem('usuario');
-      if (!rawUsuario) return;
-
-      try {
-        const usuario = JSON.parse(rawUsuario);
-        if (usuario?.id) {
-          setConductorId(usuario.id);
-        }
-      } catch (error) {
-        console.log('No se pudo leer el usuario persistido', error);
+      const sesion = await cargarSesionPersistida();
+      if (sesion?.usuario?.id) {
+        setUsuario(sesion.usuario);
+        setConductorId(sesion.usuario.id);
+      } else {
+        setLoading(false);
       }
     };
 
@@ -148,8 +200,16 @@ export default function PantallaConductor({ navigation }) {
       const res = await fetch(`${SERVIDOR}/api/asignaciones/conductor/${conductorId || CONDUCTOR_ID_DEMO}`, {
         headers: await obtenerAuthHeaders(),
       });
-      const datos = await res.json();
-      const alumnosNormalizados = (datos.alumnos || [])
+      const datos = await res.json().catch(() => ({}));
+      const alumnosRespuesta = Array.isArray(datos?.alumnos) ? datos.alumnos : [];
+      const rutasRespuesta = Array.isArray(datos?.rutas) ? datos.rutas : [];
+
+      if (!res.ok) {
+        const mensaje = datos?.error || datos?.message || 'No se pudo cargar la lista de alumnos.';
+        throw new Error(mensaje);
+      }
+
+      const alumnosNormalizados = alumnosRespuesta
         .map((alumno) => ({
           ...alumno,
           latitude: alumno.latitude != null ? Number(alumno.latitude) : null,
@@ -158,12 +218,15 @@ export default function PantallaConductor({ navigation }) {
         .sort((a, b) => (a.orden || 0) - (b.orden || 0));
 
       setAlumnos(alumnosNormalizados);
-      setRutas(datos.rutas);
-      if (datos.rutas && datos.rutas.length > 0 && !nuevoAlumno.ruta_id) {
-        setNuevoAlumno(prev => ({ ...prev, ruta_id: datos.rutas[0].id }));
+      setRutas(rutasRespuesta);
+      setError('');
+      if (rutasRespuesta.length > 0 && !nuevoAlumno.ruta_id) {
+        setNuevoAlumno(prev => ({ ...prev, ruta_id: rutasRespuesta[0].id }));
       }
     } catch (e) {
-      setError('No se pudo cargar la lista de alumnos.');
+      setAlumnos([]);
+      setRutas([]);
+      setError(e.message || 'No se pudo cargar la lista de alumnos.');
     } finally {
       setLoading(false);
     }
@@ -213,11 +276,58 @@ export default function PantallaConductor({ navigation }) {
     }
   };
 
+  const verificarProximidadParaAlerta = async (coords) => {
+    if (!coords) return;
+    
+    // Encontrar el primer alumno activo que no ha abordado y al que no se le ha enviado alerta
+    const proximoAlumno = alumnosActivosEnRuta.find(a => 
+      a.estado !== 'abordado' && 
+      a.latitude != null && 
+      !alertasProximidadEnviadasRef.current.has(a.id)
+    );
+
+    if (!proximoAlumno) return;
+
+    const distanciaMetros = calcularDistanciaMetros(
+      coords.latitude, coords.longitude,
+      proximoAlumno.latitude, proximoAlumno.longitude
+    );
+
+    // Si está a menos de 2.5km, verificar ETA
+    if (distanciaMetros < 2500) {
+      const eta = await obtenerETADeGoogle(coords, { latitude: proximoAlumno.latitude, longitude: proximoAlumno.longitude });
+      
+      if (eta && eta.minutos <= 5) {
+        alertasProximidadEnviadasRef.current.add(proximoAlumno.id);
+        
+        try {
+          const rutaActual = rutas[0] || {};
+          await fetch(`${SERVIDOR}/api/notificaciones/alerta-bus`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...(await obtenerAuthHeaders()) },
+            body: JSON.stringify({
+              rutaId: rutaActual.id,
+              minutosRestantes: 5,
+              colegioId: rutaActual.colegio_id,
+              alumnoId: proximoAlumno.id
+            })
+          });
+          agregarEvento(`📢 Alerta 5 min enviada para ${proximoAlumno.nombre}`);
+        } catch (e) {
+          console.log('Error enviando alerta de proximidad:', e);
+        }
+      }
+    }
+  };
+
   const iniciarRuta = async () => {
     try {
       if (intervaloRef.current) return;
 
+      alertasProximidadEnviadasRef.current.clear();
       const loc = await Location.getCurrentPositionAsync({});
+      const rutaActivaActual = rutas[0] || {};
+      const sentidoRuta = new Date().getHours() < 12 ? 'casa_a_colegio' : 'colegio_a_casa';
       setUbicacion(loc.coords);
       setRutaActiva(true);
       agregarEvento('Ruta iniciada');
@@ -228,14 +338,18 @@ export default function PantallaConductor({ navigation }) {
 
       socket.emit('conductor:inicio_ruta', {
         conductorId: conductorId || CONDUCTOR_ID_DEMO,
-        nombre: rutas[0]?.conductor_nombre || 'Conductor',
-        ruta: rutas[0]?.nombre || 'Sin ruta',
+        nombre: rutaActivaActual.conductor_nombre || 'Conductor',
+        ruta: rutaActivaActual.nombre || 'Sin ruta',
+        rutaId: rutaActivaActual.id || null,
+        sentido: sentidoRuta,
       });
 
       socket.emit('conductor:ubicacion', {
         conductorId: conductorId || CONDUCTOR_ID_DEMO,
-        nombre: rutas[0]?.conductor_nombre || 'Conductor',
-        ruta: rutas[0]?.nombre || 'Sin ruta',
+        nombre: rutaActivaActual.conductor_nombre || 'Conductor',
+        ruta: rutaActivaActual.nombre || 'Sin ruta',
+        rutaId: rutaActivaActual.id || null,
+        sentido: sentidoRuta,
         latitude: loc.coords.latitude,
         longitude: loc.coords.longitude,
       });
@@ -247,14 +361,19 @@ export default function PantallaConductor({ navigation }) {
 
           socket.emit('conductor:ubicacion', {
             conductorId: conductorId || CONDUCTOR_ID_DEMO,
-            nombre: rutas[0]?.conductor_nombre || 'Conductor',
-            ruta: rutas[0]?.nombre || 'Sin ruta',
+            nombre: rutaActivaActual.conductor_nombre || 'Conductor',
+            ruta: rutaActivaActual.nombre || 'Sin ruta',
+            rutaId: rutaActivaActual.id || null,
+            sentido: sentidoRuta,
             latitude: locActual.coords.latitude,
             longitude: locActual.coords.longitude,
           });
 
           // Auto abordaje
           await sincronizarAbordajesAutomaticos(locActual.coords);
+
+          // Proximidad 5 minutos
+          await verificarProximidadParaAlerta(locActual.coords);
 
           // Verificar desvío
           try {
@@ -263,7 +382,7 @@ export default function PantallaConductor({ navigation }) {
               headers: { 'Content-Type': 'application/json', ...(await obtenerAuthHeaders()) },
               body: JSON.stringify({
                 conductorId: conductorId || CONDUCTOR_ID_DEMO,
-                rutaId: rutas[0]?.id || 1,
+                rutaId: rutaActivaActual.id || 1,
                 latitude: locActual.coords.latitude,
                 longitude: locActual.coords.longitude,
               }),
@@ -305,7 +424,13 @@ export default function PantallaConductor({ navigation }) {
     setDistanciaDesvio(0);
     agregarEvento('Ruta finalizada');
 
-    socket.emit('conductor:fin_ruta', { conductorId: conductorId || CONDUCTOR_ID_DEMO });
+    const rutaActivaActual = rutas[0] || {};
+    const sentidoRuta = new Date().getHours() < 12 ? 'casa_a_colegio' : 'colegio_a_casa';
+    socket.emit('conductor:fin_ruta', {
+      conductorId: conductorId || CONDUCTOR_ID_DEMO,
+      rutaId: rutaActivaActual.id || null,
+      sentido: sentidoRuta,
+    });
     socket.disconnect();
   };
 
@@ -331,7 +456,15 @@ export default function PantallaConductor({ navigation }) {
 
   const agregarEvento = (texto) => {
     const hora = new Date().toLocaleTimeString('es-SV', { hour: '2-digit', minute: '2-digit' });
-    setEventos(prev => [{ texto, hora }, ...prev]);
+    const nuevoEvento = { texto, hora };
+    setEventos(prev => [nuevoEvento, ...prev]);
+
+    // Emitir evento por socket para que los padres lo vean
+    const rutaActual = rutas[0] || {};
+    socket.emit('conductor:evento', {
+      rutaId: rutaActual.id,
+      evento: nuevoEvento
+    });
   };
 
   const inscribirAlumno = async () => {
@@ -342,15 +475,21 @@ export default function PantallaConductor({ navigation }) {
 
     setLoadingGestion(true);
     try {
-      const response = await fetch(`${SERVIDOR}/api/admin/alumnos`, {
+      const rutaId = nuevoAlumno.ruta_id || (rutas.length > 0 ? rutas[0].id : null);
+
+      if (!rutaId) {
+        Alert.alert('Error', 'No hay una ruta activa para inscribir al alumno.');
+        return;
+      }
+
+      const response = await fetch(`${SERVIDOR}/api/asignaciones/conductor/${conductorId || CONDUCTOR_ID_DEMO}/alumnos`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...(await obtenerAuthHeaders()) },
         body: JSON.stringify({
           nombre: nuevoAlumno.nombre,
           grado: nuevoAlumno.grado || '',
           parada: nuevoAlumno.parada || '',
-          ruta_id: nuevoAlumno.ruta_id || (rutas.length > 0 ? rutas[0].id : 1),
-          padre_id: conductorId || CONDUCTOR_ID_DEMO,
+          ruta_id: rutaId,
           orden: alumnos.length + 1,
           activo: true
         }),
@@ -437,15 +576,18 @@ export default function PantallaConductor({ navigation }) {
         <View style={styles.header}>
           <View style={styles.headerContent}>
             <View style={styles.headerLeft}>
-              <Text style={styles.bienvenida}>Buenos días</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+                <Text style={styles.bienvenida}>Buenos días</Text>
+                <View style={[styles.socketStatus, { backgroundColor: socketConectado ? THEME.success : THEME.error }]} />
+              </View>
               <Text style={styles.nombreConductor}>
                 {rutas.length > 0 ? rutas[0].conductor_nombre || 'Conductor' : 'Conductor'}
               </Text>
-              <Text style={styles.brandCaption}>{branding.appName || 'kidGo'}</Text>
+              <Text style={styles.brandCaption}>{branding.appName || 'KidsGo!'}</Text>
               <View style={styles.rutaBadge}>
                 <Navigation size={10} color="#fff" strokeWidth={2} />
                 <Text style={styles.rutaBadgeTexto}>
-                  {rutas.length > 0 ? rutas[0].nombre : 'Cargando...'}
+                  {loading ? 'Cargando...' : (rutas.length > 0 ? rutas[0].nombre : 'Sin ruta asignada')}
                 </Text>
               </View>
             </View>
@@ -459,6 +601,25 @@ export default function PantallaConductor({ navigation }) {
               <LogOut size={18} color="#fff" strokeWidth={2} />
             </TouchableOpacity>
           </View>
+
+          {/* Banner de Vinculación para Conductor */}
+          {!usuario?.colegio_id && !usuario?.colegioId && (
+            <View style={styles.bannerVinculacion}>
+              <View style={styles.bannerVinculacionContent}>
+                <AlertCircle size={18} color="#fff" />
+                <View style={styles.bannerVinculacionTextContainer}>
+                  <Text style={styles.bannerVinculacionTitulo}>Sin colegio vinculado</Text>
+                  <Text style={styles.bannerVinculacionDesc}>Puedes generar codigos para padres y gestionar tu servicio independiente.</Text>
+                </View>
+              </View>
+              <TouchableOpacity
+                style={styles.bannerVinculacionBtn}
+                onPress={() => navigation.navigate('ConductorPadres')}
+              >
+                <Text style={styles.bannerVinculacionBtnText}>Codigos</Text>
+              </TouchableOpacity>
+            </View>
+          )}
         </View>
 
         {/* TABS COMPACTOS */}
@@ -725,11 +886,35 @@ export default function PantallaConductor({ navigation }) {
                 </View>
               </View>
 
+              {/* ACCIONES PRINCIPALES */}
+              <View style={styles.accionesPrincipales}>
+                <TouchableOpacity 
+                  style={[styles.accionCard, { backgroundColor: THEME.secondary }]} 
+                  onPress={() => navigation.navigate('ConductorPadres')}
+                >
+                  <KeyRound size={20} color="#fff" strokeWidth={2.5} />
+                  <Text style={styles.accionCardTexto}>Generar Códigos</Text>
+                </TouchableOpacity>
+                <TouchableOpacity 
+                  style={[styles.accionCard, { backgroundColor: THEME.primary }]} 
+                  onPress={() => setModalAlumnoVisible(true)}
+                >
+                  <Plus size={20} color="#fff" strokeWidth={2.5} />
+                  <Text style={styles.accionCardTexto}>Nuevo Alumno</Text>
+                </TouchableOpacity>
+              </View>
+
               {/* LISTA COMPLETA CON ACCIONES DE GESTIÓN */}
-              <Text style={styles.seccionTitulo}>Todos los alumnos</Text>
-              <TouchableOpacity style={styles.linkAction} onPress={() => navigation.navigate('ConductorPadres')}>
-                <Text style={styles.linkActionText}>Crear codigos y vincular padres</Text>
-              </TouchableOpacity>
+              <View style={styles.gestionHeader}>
+                <Text style={styles.seccionTitulo}>Todos los alumnos</Text>
+                <TouchableOpacity 
+                  style={styles.btnGestionVinculaciones} 
+                  onPress={() => navigation.navigate('ConductorPadres')}
+                >
+                  <Users size={16} color="#fff" strokeWidth={2.5} />
+                  <Text style={styles.btnGestionVinculacionesTexto}>Vinculaciones</Text>
+                </TouchableOpacity>
+              </View>
 
               {loading ? (
                 <ActivityIndicator color={THEME.primary} style={{ marginTop: 20 }} />
@@ -955,6 +1140,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   headerLeft: { flex: 1 },
+  socketStatus: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+  },
   bienvenida: {
     fontSize: 11,
     color: 'rgba(255,255,255,0.6)',
@@ -1745,5 +1935,141 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: '#fff',
     fontWeight: '700',
+  },
+  // Nuevos estilos Gobernanza Flexible
+  accionesPrincipales: {
+    flexDirection: 'row',
+    gap: 12,
+    marginBottom: 20,
+    marginTop: 4,
+  },
+  accionCard: {
+    flex: 1,
+    height: 64,
+    borderRadius: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 10,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 6,
+    elevation: 4,
+  },
+  accionCardTexto: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  bannerVinculacion: {
+    backgroundColor: THEME.secondary,
+    borderRadius: 12,
+    padding: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 12,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  bannerVinculacionContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    flex: 1,
+  },
+  bannerVinculacionTextContainer: {
+    flex: 1,
+  },
+  bannerVinculacionTitulo: {
+    color: '#fff',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  bannerVinculacionDesc: {
+    color: 'rgba(255,255,255,0.8)',
+    fontSize: 11,
+    fontWeight: '500',
+  },
+  bannerVinculacionBtn: {
+    backgroundColor: '#fff',
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 8,
+    marginLeft: 10,
+  },
+  bannerVinculacionBtnText: {
+    color: THEME.secondary,
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  gestionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+    marginTop: 10,
+  },
+  btnGestionVinculaciones: {
+    backgroundColor: THEME.secondary,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+    shadowColor: THEME.secondary,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  btnGestionVinculacionesTexto: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  cardVinculacionPrincipal: {
+    backgroundColor: THEME.surface,
+    borderRadius: 14,
+    padding: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: THEME.border,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  cardVinculacionIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    backgroundColor: '#EEF2FF',
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 14,
+  },
+  cardVinculacionText: {
+    flex: 1,
+  },
+  cardVinculacionTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: THEME.text,
+  },
+  cardVinculacionDesc: {
+    fontSize: 12,
+    color: THEME.textSecondary,
+    marginTop: 2,
+    lineHeight: 16,
+    fontWeight: '500',
   },
 });

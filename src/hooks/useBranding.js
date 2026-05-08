@@ -1,16 +1,16 @@
 import { useCallback, useState } from 'react';
 import { useFocusEffect } from '@react-navigation/native';
-import { getBranding, updateBranding } from '../services/branding';
+import { updateBranding, resetBranding as resetBrandingSrv, syncBranding } from '../services/branding';
 import { BRANDING_DEFAULTS } from '../theme/kidgoTheme';
 
 export const useBranding = () => {
   const [branding, setBranding] = useState(BRANDING_DEFAULTS);
   const [brandingLoading, setBrandingLoading] = useState(true);
 
-  const refreshBranding = useCallback(async () => {
+  const refreshBranding = useCallback(async (colegioId = null) => {
     setBrandingLoading(true);
     try {
-      const brandingData = await getBranding();
+      const brandingData = await syncBranding(colegioId);
       setBranding(brandingData);
       return brandingData;
     } finally {
@@ -24,6 +24,12 @@ export const useBranding = () => {
     return nextBranding;
   }, []);
 
+  const resetToFactoryBranding = useCallback(async () => {
+    const defaults = await resetBrandingSrv();
+    setBranding(defaults);
+    return defaults;
+  }, []);
+
   useFocusEffect(
     useCallback(() => {
       refreshBranding();
@@ -35,5 +41,6 @@ export const useBranding = () => {
     brandingLoading,
     refreshBranding,
     saveBrandingChanges,
+    resetToFactoryBranding,
   };
 };

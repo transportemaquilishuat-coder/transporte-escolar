@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -37,10 +37,30 @@ const PANTALLA_POR_ROL = {
   super_admin: 'SuperAdmin',
 };
 
+const normalizarRolRegistro = (valor = '') => {
+  const rol = String(valor).trim().toLowerCase();
+  if (['padre', 'conductor', 'admin'].includes(rol)) return rol;
+  if (rol.includes('padre')) return 'padre';
+  if (rol.includes('conductor')) return 'conductor';
+  if (rol.includes('admin')) return 'admin';
+  return '';
+};
+
+const crearHijoVacio = () => ({
+  nombre: '',
+  grado: '',
+  direccion: '',
+  codigoConductor: '',
+});
+
 export default function RegistroCodigoScreen({ navigation, route }) {
-  const { loading, error, infoCodigo, verificar, registrar } = useRegistroCodigo();
+  const { loading, error, infoCodigo, verificar, registrar, registrarConCodigo } = useRegistroCodigo();
   const { branding } = useBranding();
-  const [paso, setPaso] = useState(1);
+  
+  const iniciarConDatos = route?.params?.iniciarConDatos || false;
+  const destino = route?.params?.destino || '';
+  
+  const [paso, setPaso] = useState(iniciarConDatos ? 2 : 1);
   const [codigo, setCodigo] = useState('');
   const [tokenSesion, setTokenSesion] = useState('');
   const [vinculandoCuenta, setVinculandoCuenta] = useState(false);
@@ -50,17 +70,27 @@ export default function RegistroCodigoScreen({ navigation, route }) {
     password: '',
     telefono: '',
     dui: '',
+    direccion: '',
     licencia: '',
     placa: '',
+    fechaInicio: '',
+    fechaFin: '',
   });
+  const [hijosRegistro, setHijosRegistro] = useState([crearHijoVacio()]);
 
-  const destino = route?.params?.destino || '';
-  const mensaje = route?.params?.mensaje || 'Ingresa el codigo que recibiste para registrarte y vincularte.';
+  const mensaje = route?.params?.mensaje || 'Ingresa el codigo si quieres vincularte ahora. Tambien puedes crear tu cuenta sin codigo.';
   const tituloPantalla = useMemo(
     () => TITULOS_POR_DESTINO[destino] || 'Registro con codigo',
     [destino]
   );
-  const camposExtra = CAMPOS_EXTRA_POR_TIPO[infoCodigo?.tipo] || [];
+
+  const camposExtra = useMemo(() => {
+    if (infoCodigo?.tipo) return CAMPOS_EXTRA_POR_TIPO[infoCodigo.tipo] || [];
+    // Fallback si iniciamos con datos sin verificar codigo aun
+    if (destino === 'conductor') return ['licencia', 'placa'];
+    return [];
+  }, [infoCodigo, destino]);
+
   const logoFuente = branding.logoUri ? { uri: branding.logoUri } : null;
   const brandColor = branding.headerColor || KIDGO_THEME.primaryDark;
 
@@ -76,6 +106,44 @@ export default function RegistroCodigoScreen({ navigation, route }) {
 
   const actualizarDato = (clave, valor) => {
     setDatos((prev) => ({ ...prev, [clave]: valor }));
+  };
+
+  const actualizarHijo = (indice, clave, valor) => {
+    setHijosRegistro((prev) =>
+      prev.map((hijo, i) => (i === indice ? { ...hijo, [clave]: valor } : hijo))
+    );
+  };
+
+  const agregarHijo = () => {
+    setHijosRegistro((prev) => [...prev, crearHijoVacio()]);
+  };
+
+  const eliminarHijo = (indice) => {
+    setHijosRegistro((prev) => (prev.length === 1 ? prev : prev.filter((_, i) => i !== indice)));
+  };
+
+  const obtenerHijosNormalizados = () =>
+    hijosRegistro
+      .map((hijo) => ({
+        nombre: hijo.nombre.trim(),
+        grado: hijo.grado.trim(),
+        direccion: hijo.direccion.trim() || datos.direccion.trim(),
+        codigoConductor: hijo.codigoConductor.trim().toUpperCase(),
+      }))
+      .filter((hijo) => hijo.nombre || hijo.grado || hijo.direccion || hijo.codigoConductor);
+
+  const validarHijosPadre = () => {
+    if (destino !== 'padre') return null;
+
+    const hijos = obtenerHijosNormalizados();
+    if (hijos.length === 0) return null;
+
+    const hijoIncompleto = hijos.find((hijo) => !hijo.nombre || !hijo.grado);
+    if (hijoIncompleto) {
+      return 'Cada hijo necesita al menos nombre y grado.';
+    }
+
+    return null;
   };
 
   const navegarSegunRol = (usuario) => {
@@ -96,6 +164,15 @@ export default function RegistroCodigoScreen({ navigation, route }) {
 
     try {
       await verificar(codigoNormalizado);
+      if (destino === 'padre') {
+        setHijosRegistro((prev) =>
+          prev.map((hijo, indice) => (
+            indice === 0 && !hijo.codigoConductor
+              ? { ...hijo, codigoConductor: codigoNormalizado }
+              : hijo
+          ))
+        );
+      }
       setPaso(2);
     } catch (err) {
       Alert.alert('Codigo invalido', err.message);
@@ -105,6 +182,12 @@ export default function RegistroCodigoScreen({ navigation, route }) {
   const handleRegistro = async () => {
     if (!datos.nombre.trim() || !datos.email.trim() || !datos.password.trim()) {
       Alert.alert('Error', 'Nombre, correo y contrasena son obligatorios.');
+      return;
+    }
+
+    const errorHijos = validarHijosPadre();
+    if (errorHijos) {
+      Alert.alert('Error', errorHijos);
       return;
     }
 
@@ -119,20 +202,72 @@ export default function RegistroCodigoScreen({ navigation, route }) {
     }
 
     try {
-      const resultado = await registrar({
-        ...datos,
-        codigo: codigo.trim().toUpperCase(),
-        rolSolicitado: destino || undefined,
-      });
+      const hijosNormalizados = obtenerHijosNormalizados();
+      const primerCodigoHijo = hijosNormalizados[0]?.codigoConductor;
+      const codigoPrincipal = codigo.trim().toUpperCase() || primerCodigoHijo;
+      const rol = normalizarRolRegistro(destino || infoCodigo?.rol || infoCodigo?.tipo);
+      const payloadRegistro = {
+        nombre: datos.nombre.trim(),
+        email: datos.email.trim().toLowerCase(),
+        password: datos.password,
+        rol: rol || undefined,
+        telefono: datos.telefono.trim() || undefined,
+        dui: datos.dui.trim() || undefined,
+        direccion: datos.direccion.trim() || undefined,
+        licencia: datos.licencia.trim() || undefined,
+        placa: datos.placa.trim().toUpperCase() || undefined,
+      };
 
-      if (resultado?.token && resultado?.usuario) {
-        guardarSesion({ token: resultado.token, usuario: resultado.usuario });
-        await AsyncStorage.setItem('token', resultado.token);
-        await AsyncStorage.setItem('usuario', JSON.stringify(resultado.usuario));
-        await registrarNotificaciones(resultado.usuario.id, resultado.token);
+      if (destino === 'padre') {
+        payloadRegistro.fechaInicio = datos.fechaInicio;
+        payloadRegistro.fechaFin = datos.fechaFin;
+        payloadRegistro.hijos = hijosNormalizados;
+        payloadRegistro.alumnos = hijosNormalizados.map((hijo) => ({
+          nombre: hijo.nombre,
+          grado: hijo.grado,
+          direccion: hijo.direccion,
+          parada: hijo.direccion,
+          codigoInvitacion: hijo.codigoConductor,
+          codigoConductor: hijo.codigoConductor,
+        }));
       }
 
-      Alert.alert('Registro completado', 'Tu cuenta fue creada y vinculada correctamente.', [
+      const resultado = codigoPrincipal
+        ? await registrarConCodigo({
+          ...payloadRegistro,
+          codigo: codigoPrincipal,
+        })
+        : await registrar(payloadRegistro);
+
+      if (resultado?.token && resultado?.usuario) {
+        const usuarioSesion = {
+          ...resultado.usuario,
+          direccion: resultado.usuario.direccion || datos.direccion,
+        };
+        guardarSesion({ token: resultado.token, usuario: usuarioSesion });
+        await AsyncStorage.setItem('token', resultado.token);
+        await AsyncStorage.setItem('usuario', JSON.stringify(usuarioSesion));
+        await registrarNotificaciones(usuarioSesion.id, resultado.token);
+
+        const codigosExtra = hijosNormalizados.filter((hijo) => hijo.codigoConductor && hijo.codigoConductor !== codigoPrincipal);
+        for (const hijo of codigosExtra) {
+          await vincularConCodigo(hijo.codigoConductor, resultado.token, {
+            hijo,
+            alumno: {
+              nombre: hijo.nombre,
+              grado: hijo.grado,
+              direccion: hijo.direccion,
+              parada: hijo.direccion,
+            },
+          });
+        }
+      }
+
+      const mensajeExito = codigo.trim() || hijosNormalizados.some((hijo) => hijo.codigoConductor)
+        ? 'Tu cuenta fue creada y vinculada correctamente.'
+        : 'Tu cuenta fue creada. Ahora puedes iniciar sesion y vincularte mas tarde.';
+
+      Alert.alert('Registro completado', mensajeExito, [
         { text: 'Continuar', onPress: () => navegarSegunRol(resultado?.usuario) },
       ]);
     } catch (err) {
@@ -142,9 +277,24 @@ export default function RegistroCodigoScreen({ navigation, route }) {
 
   const manejarVincularCuentaExistente = async () => {
     const codigoNormalizado = codigo.trim().toUpperCase();
+    const hijosNormalizados = obtenerHijosNormalizados();
+    const vinculacionesHijos = destino === 'padre'
+      ? hijosNormalizados.map((hijo) => ({ codigo: hijo.codigoConductor, hijo })).filter((item) => item.codigo)
+      : [];
+    const codigosHijos = vinculacionesHijos.map((item) => item.codigo);
+    const vinculacionesSueltas = [codigoNormalizado]
+      .filter((codigoActual) => codigoActual && !codigosHijos.includes(codigoActual))
+      .map((codigoActual) => ({ codigo: codigoActual, hijo: null }));
+    const vinculacionesAVincular = [...vinculacionesHijos, ...vinculacionesSueltas];
 
-    if (!codigoNormalizado) {
-      Alert.alert('Codigo requerido', 'Ingresa el codigo de invitacion.');
+    if (vinculacionesAVincular.length === 0) {
+      Alert.alert('Codigo requerido', 'Ingresa al menos un codigo de invitacion.');
+      return;
+    }
+
+    const errorHijos = validarHijosPadre();
+    if (destino === 'padre' && errorHijos) {
+      Alert.alert('Error', errorHijos);
       return;
     }
 
@@ -155,7 +305,20 @@ export default function RegistroCodigoScreen({ navigation, route }) {
 
     try {
       setVinculandoCuenta(true);
-      const resultado = await vincularConCodigo(codigoNormalizado, tokenSesion);
+      let resultado = null;
+
+      for (const vinculacion of vinculacionesAVincular) {
+        const hijo = vinculacion.hijo;
+        resultado = await vincularConCodigo(vinculacion.codigo, resultado?.token || tokenSesion, hijo ? {
+          hijo,
+          alumno: {
+            nombre: hijo.nombre,
+            grado: hijo.grado,
+            direccion: hijo.direccion,
+            parada: hijo.direccion,
+          },
+        } : {});
+      }
 
       if (resultado?.token && resultado?.usuario) {
         guardarSesion({ token: resultado.token, usuario: resultado.usuario });
@@ -210,34 +373,46 @@ export default function RegistroCodigoScreen({ navigation, route }) {
     return (
       <View style={styles.container}>
         <View style={styles.hero}>
-          <View style={[styles.logoWrap, { backgroundColor: brandColor }]}>
+          <View style={[styles.logoWrap, { backgroundColor: brandColor, shadowColor: brandColor }]}>
             {logoFuente ? <Image source={logoFuente} style={styles.logoImage} /> : <Text style={styles.logoText}>KG</Text>}
           </View>
-          <Text style={styles.kicker}>{branding.appName || 'kidGo'}</Text>
+          <Text style={[styles.kicker, { color: brandColor }]}>{branding.appName || 'KidsGo!'}</Text>
           <Text style={styles.titulo}>{tituloPantalla}</Text>
           <Text style={styles.subtitulo}>{mensaje}</Text>
         </View>
 
-        <TextInput
-          style={[styles.inputCodigo, { borderColor: brandColor, color: KIDGO_THEME.text }]}
-          placeholder="ABC12345"
-          placeholderTextColor={KIDGO_THEME.textMuted}
-          value={codigo}
-          onChangeText={setCodigo}
-          autoCapitalize="characters"
-          autoCorrect={false}
-          maxLength={12}
-        />
+        <View style={styles.formSection}>
+          <Text style={styles.labelInput}>Ingresa tu codigo</Text>
+          <TextInput
+            style={[styles.inputCodigo, { borderColor: brandColor, color: '#FFFFFF' }]}
+            placeholder="ABC12345"
+            placeholderTextColor="#444444"
+            value={codigo}
+            onChangeText={setCodigo}
+            autoCapitalize="characters"
+            autoCorrect={false}
+            maxLength={12}
+          />
 
-        {error ? <Text style={styles.errorTexto}>{error}</Text> : null}
+          {error ? <Text style={styles.errorTexto}>{error}</Text> : null}
 
-        {loading || vinculandoCuenta ? (
-          <ActivityIndicator size="large" color={brandColor} />
-        ) : (
-          <TouchableOpacity style={[styles.btn, { backgroundColor: brandColor }]} onPress={handleVerificarCodigo}>
-            <Text style={styles.btnText}>Verificar codigo</Text>
-          </TouchableOpacity>
-        )}
+          {loading || vinculandoCuenta ? (
+            <ActivityIndicator size="large" color={brandColor} style={styles.loader} />
+          ) : (
+            <>
+              <TouchableOpacity style={[styles.btn, { backgroundColor: brandColor }]} onPress={handleVerificarCodigo}>
+                <Text style={styles.btnText}>Verificar codigo</Text>
+              </TouchableOpacity>
+              
+              <TouchableOpacity 
+                style={[styles.btn, { backgroundColor: 'transparent', borderWidth: 1, borderColor: brandColor, marginTop: 12 }]} 
+                onPress={() => setPaso(2)}
+              >
+                <Text style={[styles.btnText, { color: brandColor }]}>Registrarme sin codigo</Text>
+              </TouchableOpacity>
+            </>
+          )}
+        </View>
 
         <TouchableOpacity
           style={styles.salirBtn}
@@ -250,103 +425,287 @@ export default function RegistroCodigoScreen({ navigation, route }) {
   }
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.contentContainer}>
-      <Text style={styles.titulo}>Completa tu registro</Text>
-
-      {infoCodigo ? (
-        <View style={styles.infoBox}>
-          <Text style={styles.infoText}>Tipo de vinculacion: {infoCodigo.tipo || 'No definido'}</Text>
-          <Text style={styles.infoText}>
-            Colegio: {infoCodigo.colegio || infoCodigo.colegio_nombre || 'No disponible'}
+    <View style={styles.container}>
+      <ScrollView contentContainerStyle={styles.contentContainer} showsVerticalScrollIndicator={false}>
+        <View style={styles.headerRegistro}>
+          <Text style={styles.tituloForm}>Completa tu registro</Text>
+          <Text style={styles.subtituloForm}>
+            {destino === 'padre'
+              ? 'Ingresa tus datos. Puedes agregar hijos sin codigo y vincularlos despues desde tu panel.'
+              : 'Ingresa tus datos personales. El codigo de vinculacion es opcional.'}
           </Text>
         </View>
-      ) : null}
 
-      <TextInput
-        style={styles.input}
-        placeholder="Nombre completo"
-        value={datos.nombre}
-        onChangeText={(valor) => actualizarDato('nombre', valor)}
-        placeholderTextColor={KIDGO_THEME.textSecondary}
-      />
-      <TextInput
-        style={styles.input}
-        placeholder="Correo electronico"
-        keyboardType="email-address"
-        autoCapitalize="none"
-        value={datos.email}
-        onChangeText={(valor) => actualizarDato('email', valor)}
-        placeholderTextColor={KIDGO_THEME.textSecondary}
-      />
-      <TextInput
-        style={styles.input}
-        placeholder="Contrasena"
-        secureTextEntry
-        value={datos.password}
-        onChangeText={(valor) => actualizarDato('password', valor)}
-        placeholderTextColor={KIDGO_THEME.textSecondary}
-      />
-      <TextInput
-        style={styles.input}
-        placeholder="Telefono"
-        keyboardType="phone-pad"
-        value={datos.telefono}
-        onChangeText={(valor) => actualizarDato('telefono', valor)}
-        placeholderTextColor={KIDGO_THEME.textSecondary}
-      />
-      <TextInput
-        style={styles.input}
-        placeholder="DUI"
-        value={datos.dui}
-        onChangeText={(valor) => actualizarDato('dui', valor)}
-        placeholderTextColor={KIDGO_THEME.textSecondary}
-      />
+        {infoCodigo ? (
+          <View style={[styles.infoBox, { borderColor: brandColor + '40' }]}>
+            <View style={styles.infoRow}>
+              <View style={[styles.infoIcon, { backgroundColor: brandColor }]}>
+                <Text style={styles.infoIconText}>i</Text>
+              </View>
+              <View>
+                <Text style={styles.infoLabel}>Tipo de vinculacion</Text>
+                <Text style={styles.infoValue}>{infoCodigo.tipo || 'No definido'}</Text>
+              </View>
+            </View>
+            <View style={styles.infoDivider} />
+            <View style={styles.infoRow}>
+              <View style={[styles.infoIcon, { backgroundColor: '#F59E0B' }]}>
+                <Text style={styles.infoIconText}>H</Text>
+              </View>
+              <View>
+                <Text style={styles.infoLabel}>Colegio</Text>
+                <Text style={styles.infoValue}>
+                  {infoCodigo.colegio || infoCodigo.colegio_nombre || 'No disponible'}
+                </Text>
+              </View>
+            </View>
+          </View>
+        ) : null}
 
-      {camposExtra.map(renderCampoExtra)}
+        <View style={styles.formContainer}>
+          <Text style={styles.labelField}>Nombre completo</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="Ej: Juan Perez"
+            value={datos.nombre}
+            onChangeText={(valor) => actualizarDato('nombre', valor)}
+            placeholderTextColor="#555555"
+          />
+          
+          <Text style={styles.labelField}>Correo electronico</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="correo@ejemplo.com"
+            keyboardType="email-address"
+            autoCapitalize="none"
+            value={datos.email}
+            onChangeText={(valor) => actualizarDato('email', valor)}
+            placeholderTextColor="#555555"
+          />
 
-      {error ? <Text style={styles.errorTexto}>{error}</Text> : null}
+          <Text style={styles.labelField}>Contrasena</Text>
+          <TextInput
+            style={styles.input}
+            placeholder="Minimo 8 caracteres"
+            secureTextEntry
+            value={datos.password}
+            onChangeText={(valor) => actualizarDato('password', valor)}
+            placeholderTextColor="#555555"
+          />
 
-      {loading || vinculandoCuenta ? (
-        <ActivityIndicator size="large" color={brandColor} style={styles.loader} />
-      ) : (
-        <>
-          <TouchableOpacity style={[styles.btn, { backgroundColor: brandColor }]} onPress={handleRegistro}>
-            <Text style={styles.btnText}>Registrarme y vincularme</Text>
-          </TouchableOpacity>
+          <View style={styles.rowInputs}>
+            <View style={{ flex: 1, marginRight: 8 }}>
+              <Text style={styles.labelField}>Telefono</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="7777-7777"
+                keyboardType="phone-pad"
+                value={datos.telefono}
+                onChangeText={(valor) => actualizarDato('telefono', valor)}
+                placeholderTextColor="#555555"
+              />
+            </View>
+            <View style={{ flex: 1, marginLeft: 8 }}>
+              <Text style={styles.labelField}>DUI</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="00000000-0"
+                value={datos.dui}
+                onChangeText={(valor) => actualizarDato('dui', valor)}
+                placeholderTextColor="#555555"
+              />
+            </View>
+          </View>
 
-          {tokenSesion ? (
-            <TouchableOpacity onPress={manejarVincularCuentaExistente} style={[styles.secondaryButton, { borderColor: brandColor }]}>
-              <Text style={[styles.secondaryButtonText, { color: brandColor }]}>Ya tengo cuenta, solo vincularme</Text>
-            </TouchableOpacity>
+          {destino === 'padre' ? (
+            <>
+              <Text style={styles.labelField}>Direccion de recogida</Text>
+              <TextInput
+                style={[styles.input, styles.inputMultilinea]}
+                placeholder="Ej: Colonia, calle, numero de casa, municipio"
+                value={datos.direccion}
+                onChangeText={(valor) => actualizarDato('direccion', valor)}
+                placeholderTextColor="#555555"
+                multiline
+                textAlignVertical="top"
+              />
+
+              <View style={styles.rowInputs}>
+                <View style={{ flex: 1, marginRight: 8 }}>
+                  <Text style={styles.labelField}>Fecha inicio servicio</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="DD/MM/YYYY"
+                    value={datos.fechaInicio}
+                    onChangeText={(valor) => actualizarDato('fechaInicio', valor)}
+                    placeholderTextColor="#555555"
+                  />
+                </View>
+                <View style={{ flex: 1, marginLeft: 8 }}>
+                  <Text style={styles.labelField}>Fecha fin servicio</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="DD/MM/YYYY"
+                    value={datos.fechaFin}
+                    onChangeText={(valor) => actualizarDato('fechaFin', valor)}
+                    placeholderTextColor="#555555"
+                  />
+                </View>
+              </View>
+
+              <View style={styles.hijosHeader}>
+                <View style={styles.hijosHeaderTexto}>
+                  <Text style={styles.hijosTitulo}>Hijos a vincular</Text>
+                  <Text style={styles.hijosSubtitulo}>
+                    Usa el mismo codigo si comparten conductor o uno distinto por cada ruta.
+                  </Text>
+                </View>
+                <TouchableOpacity style={[styles.btnAgregarHijo, { borderColor: brandColor }]} onPress={agregarHijo}>
+                  <Text style={[styles.btnAgregarHijoTexto, { color: brandColor }]}>Agregar</Text>
+                </TouchableOpacity>
+              </View>
+
+              {hijosRegistro.map((hijo, indice) => (
+                <View key={`hijo-${indice}`} style={styles.hijoCard}>
+                  <View style={styles.hijoCardHeader}>
+                    <Text style={styles.hijoCardTitulo}>Hijo {indice + 1}</Text>
+                    {hijosRegistro.length > 1 ? (
+                      <TouchableOpacity onPress={() => eliminarHijo(indice)}>
+                        <Text style={styles.eliminarHijoTexto}>Quitar</Text>
+                      </TouchableOpacity>
+                    ) : null}
+                  </View>
+
+                  <Text style={styles.labelField}>Nombre del estudiante</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Ej: Maria Perez"
+                    value={hijo.nombre}
+                    onChangeText={(valor) => actualizarHijo(indice, 'nombre', valor)}
+                    placeholderTextColor="#555555"
+                  />
+
+                  <View style={styles.rowInputs}>
+                    <View style={{ flex: 1, marginRight: 8 }}>
+                      <Text style={styles.labelField}>Grado</Text>
+                      <TextInput
+                        style={styles.input}
+                        placeholder="Ej: 3A"
+                        value={hijo.grado}
+                        onChangeText={(valor) => actualizarHijo(indice, 'grado', valor)}
+                        placeholderTextColor="#555555"
+                      />
+                    </View>
+                    <View style={{ flex: 1, marginLeft: 8 }}>
+                      <Text style={styles.labelField}>Codigo conductor (opcional)</Text>
+                      <TextInput
+                        style={styles.input}
+                        placeholder="ABC12345"
+                        value={hijo.codigoConductor}
+                        onChangeText={(valor) => actualizarHijo(indice, 'codigoConductor', valor)}
+                        autoCapitalize="characters"
+                        autoCorrect={false}
+                        placeholderTextColor="#555555"
+                      />
+                    </View>
+                  </View>
+
+                  <Text style={styles.labelField}>Punto de recogida de este hijo</Text>
+                  <TextInput
+                    style={[styles.input, styles.inputMultilineaCompacta]}
+                    placeholder="Opcional si usa la direccion principal"
+                    value={hijo.direccion}
+                    onChangeText={(valor) => actualizarHijo(indice, 'direccion', valor)}
+                    placeholderTextColor="#555555"
+                    multiline
+                    textAlignVertical="top"
+                  />
+                </View>
+              ))}
+            </>
           ) : null}
-        </>
-      )}
-    </ScrollView>
+
+          {camposExtra.map(renderCampoExtra)}
+
+          {destino !== 'padre' ? (
+            <>
+              <View style={styles.separador} />
+
+              <Text style={styles.labelOpcional}>Codigo de vinculacion (opcional)</Text>
+              <TextInput
+                style={[styles.input, styles.inputDestacado]}
+                placeholder="Código (Ej: ABC12345)"
+                value={codigo}
+                onChangeText={setCodigo}
+                autoCapitalize="characters"
+                placeholderTextColor="#666666"
+              />
+            </>
+          ) : null}
+
+          {error ? <Text style={styles.errorTexto}>{error}</Text> : null}
+
+          {loading || vinculandoCuenta ? (
+            <ActivityIndicator size="large" color={brandColor} style={styles.loader} />
+          ) : (
+            <View style={styles.footerActions}>
+              <TouchableOpacity style={[styles.btn, { backgroundColor: brandColor }]} onPress={handleRegistro}>
+                <Text style={styles.btnText}>
+                  {destino === 'padre'
+                    ? 'Registrarme y vincular hijos'
+                    : codigo.trim() ? 'Registrarme y vincularme' : 'Crear mi cuenta'}
+                </Text>
+              </TouchableOpacity>
+
+              {tokenSesion ? (
+                <TouchableOpacity onPress={manejarVincularCuentaExistente} style={[styles.secondaryButton, { borderColor: brandColor }]}>
+                  <Text style={[styles.secondaryButtonText, { color: brandColor }]}>
+                    {destino === 'padre' ? 'Vincular hijos a mi cuenta existente' : 'Solo vincular mi cuenta existente'}
+                  </Text>
+                </TouchableOpacity>
+              ) : null}
+
+              <TouchableOpacity 
+                style={styles.btnVolverAtras} 
+                onPress={() => navigation.goBack()}
+              >
+                <Text style={styles.btnVolverAtrasText}>Volver atras</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
+      </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: 24,
-    backgroundColor: KIDGO_THEME.background,
+    backgroundColor: '#121212',
   },
   contentContainer: {
-    paddingBottom: 32,
+    padding: 24,
+    paddingTop: 50,
+    paddingBottom: 40,
   },
   hero: {
     alignItems: 'center',
-    marginTop: 24,
-    marginBottom: 18,
+    marginTop: 20,
+    marginBottom: 30,
   },
   logoWrap: {
-    width: 72,
-    height: 72,
+    width: 80,
+    height: 80,
     borderRadius: 22,
     overflow: 'hidden',
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: 16,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+    elevation: 10,
   },
   logoImage: {
     width: '100%',
@@ -354,106 +713,267 @@ const styles = StyleSheet.create({
   },
   logoText: {
     color: '#fff',
-    fontSize: 24,
-    fontWeight: '800',
+    fontSize: 26,
+    fontWeight: '900',
   },
   kicker: {
     fontSize: 12,
-    color: KIDGO_THEME.textSecondary,
-    fontWeight: '800',
+    fontWeight: '900',
     textTransform: 'uppercase',
-    letterSpacing: 1,
-    marginBottom: 8,
+    letterSpacing: 2,
+    marginBottom: 10,
   },
   titulo: {
     fontSize: 28,
-    fontWeight: '800',
-    marginBottom: 8,
+    fontWeight: '900',
+    color: '#FFFFFF',
     textAlign: 'center',
-    color: KIDGO_THEME.text,
+    marginBottom: 10,
   },
   subtitulo: {
-    fontSize: 16,
-    color: KIDGO_THEME.textSecondary,
+    fontSize: 15,
+    color: '#B0B0B0',
     textAlign: 'center',
-    marginBottom: 24,
     lineHeight: 22,
+    paddingHorizontal: 20,
+  },
+  formSection: {
+    backgroundColor: '#1E1E1E',
+    borderRadius: 24,
+    padding: 24,
+    borderWidth: 1,
+    borderColor: '#333333',
+  },
+  labelInput: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
+    marginBottom: 12,
+    textAlign: 'center',
   },
   inputCodigo: {
     borderWidth: 2,
-    borderRadius: 16,
-    padding: 16,
-    fontSize: 24,
+    borderRadius: 18,
+    padding: 18,
+    fontSize: 26,
     textAlign: 'center',
-    letterSpacing: 4,
-    fontWeight: '800',
+    letterSpacing: 6,
+    fontWeight: '900',
+    marginBottom: 20,
+    backgroundColor: '#121212',
+  },
+  headerRegistro: {
     marginBottom: 24,
-    backgroundColor: KIDGO_THEME.surface,
+  },
+  tituloForm: {
+    fontSize: 26,
+    fontWeight: '900',
+    color: '#FFFFFF',
+    marginBottom: 8,
+  },
+  subtituloForm: {
+    fontSize: 14,
+    color: '#B0B0B0',
+    lineHeight: 20,
+  },
+  formContainer: {
+    marginTop: 10,
+  },
+  labelField: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#E0E0E0',
+    marginBottom: 8,
+    marginLeft: 4,
   },
   input: {
+    backgroundColor: '#1E1E1E',
     borderWidth: 1,
-    borderColor: KIDGO_THEME.border,
+    borderColor: '#333333',
+    borderRadius: 16,
+    padding: 15,
+    fontSize: 15,
+    marginBottom: 18,
+    color: '#FFFFFF',
+  },
+  inputMultilinea: {
+    minHeight: 86,
+  },
+  inputMultilineaCompacta: {
+    minHeight: 68,
+  },
+  rowInputs: {
+    flexDirection: 'row',
+  },
+  hijosHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: 12,
+    marginTop: 6,
+    marginBottom: 14,
+  },
+  hijosHeaderTexto: {
+    flex: 1,
+  },
+  hijosTitulo: {
+    color: '#FFFFFF',
+    fontSize: 18,
+    fontWeight: '900',
+    marginBottom: 4,
+  },
+  hijosSubtitulo: {
+    color: '#B0B0B0',
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  btnAgregarHijo: {
+    borderWidth: 1.5,
     borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  btnAgregarHijoTexto: {
+    fontSize: 13,
+    fontWeight: '900',
+  },
+  hijoCard: {
+    backgroundColor: '#181818',
+    borderWidth: 1,
+    borderColor: '#303030',
+    borderRadius: 18,
     padding: 14,
-    fontSize: 16,
+    marginBottom: 16,
+  },
+  hijoCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     marginBottom: 12,
-    color: KIDGO_THEME.text,
-    backgroundColor: KIDGO_THEME.surface,
+  },
+  hijoCardTitulo: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '900',
+  },
+  eliminarHijoTexto: {
+    color: '#EF4444',
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  inputDestacado: {
+    backgroundColor: '#1A1D21',
+    borderColor: '#3B82F640',
+    borderWidth: 1.5,
+  },
+  labelOpcional: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    marginBottom: 10,
+    marginTop: 5,
+  },
+  separador: {
+    height: 1,
+    backgroundColor: '#333333',
+    marginVertical: 20,
+  },
+  infoBox: {
+    backgroundColor: '#1E1E1E',
+    padding: 20,
+    borderRadius: 20,
+    marginBottom: 24,
+    borderWidth: 1,
+  },
+  infoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  infoIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 14,
+  },
+  infoIconText: {
+    color: '#FFFFFF',
+    fontWeight: '900',
+    fontSize: 14,
+  },
+  infoLabel: {
+    fontSize: 11,
+    color: '#888888',
+    fontWeight: '700',
+    textTransform: 'uppercase',
+  },
+  infoValue: {
+    fontSize: 15,
+    color: '#FFFFFF',
+    fontWeight: '800',
+  },
+  infoDivider: {
+    height: 1,
+    backgroundColor: '#333333',
+    marginVertical: 12,
+    marginLeft: 46,
   },
   btn: {
-    padding: 16,
-    borderRadius: 14,
-    marginTop: 8,
+    padding: 18,
+    borderRadius: 18,
+    shadowColor: '#000',
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    elevation: 5,
   },
   btnText: {
     color: '#FFF',
-    fontWeight: '800',
+    fontWeight: '900',
     fontSize: 16,
     textAlign: 'center',
-  },
-  infoBox: {
-    backgroundColor: KIDGO_THEME.surfaceElevated,
-    padding: 16,
-    borderRadius: 14,
-    marginBottom: 20,
-    borderWidth: 1,
-    borderColor: KIDGO_THEME.border,
-  },
-  infoText: {
-    color: KIDGO_THEME.primary,
-    fontWeight: '700',
-    marginBottom: 4,
-  },
-  errorTexto: {
-    color: KIDGO_THEME.error,
-    textAlign: 'center',
-    marginBottom: 12,
-    fontWeight: '700',
-  },
-  loader: {
-    marginTop: 20,
+    letterSpacing: 0.5,
   },
   secondaryButton: {
-    marginTop: 12,
-    borderWidth: 1,
-    borderRadius: 14,
+    marginTop: 14,
+    borderWidth: 1.5,
+    borderRadius: 18,
     padding: 16,
-    backgroundColor: KIDGO_THEME.surface,
   },
   secondaryButtonText: {
     fontWeight: '800',
-    fontSize: 15,
+    fontSize: 14,
     textAlign: 'center',
   },
-  salirBtn: {
+  btnVolverAtras: {
     marginTop: 20,
-    padding: 14,
+    padding: 10,
+    alignItems: 'center',
+  },
+  btnVolverAtrasText: {
+    color: '#888888',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  errorTexto: {
+    color: '#EF4444',
+    textAlign: 'center',
+    marginBottom: 16,
+    fontWeight: '700',
+    fontSize: 13,
+  },
+  loader: {
+    marginVertical: 10,
+  },
+  salirBtn: {
+    marginTop: 24,
+    padding: 12,
     alignItems: 'center',
   },
   salirBtnText: {
-    color: KIDGO_THEME.textSecondary,
-    fontSize: 14,
-    fontWeight: '600',
+    color: '#666666',
+    fontSize: 13,
+    fontWeight: '700',
     textDecorationLine: 'underline',
   },
 });

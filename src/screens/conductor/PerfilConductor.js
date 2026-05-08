@@ -8,7 +8,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as ImagePicker from 'expo-image-picker';
 import { limpiarSesion, obtenerToken, obtenerUsuario } from '../../services/session';
 
-const SERVIDOR = 'https://transporte-backend-production.up.railway.app';
+import { API_BASE_URL } from '../../services/apiConfig';
+
+const SERVIDOR = API_BASE_URL;
 const CONDUCTOR_ID_DEMO = 2;
 
 const obtenerAuthHeaders = async () => {

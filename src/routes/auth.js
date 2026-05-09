@@ -93,6 +93,9 @@ router.post('/login', async (req, res) => {
             email: usuario.email,
             rol: usuario.rol,
             tipo: 'usuario',
+            colegio_id: usuario.colegio_id,
+            colegioId: usuario.colegio_id,
+            colegio_nombre: usuario.colegio_nombre || null,
         });
 
         return res.json({
@@ -170,6 +173,8 @@ router.post('/registro', async (req, res) => {
             email: usuario.email,
             rol: usuario.rol,
             tipo: 'usuario',
+            colegio_id: usuario.colegio_id,
+            colegioId: usuario.colegio_id,
         });
 
         res.json({

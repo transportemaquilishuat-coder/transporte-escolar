@@ -280,6 +280,25 @@ const eliminarColegioSuperAdmin = async (req, res) => {
         await client.query('UPDATE colegios SET admin_id = NULL WHERE id = $1', [colegioId]);
 
         // 3. Eliminar dependencias profundas (rutas -> alumnos -> ausencias, etc)
+        // a0. Relaciones de padres y cambios programados de los alumnos del colegio
+        await client.query(`
+            DELETE FROM alumno_padres
+            WHERE alumno_id IN (
+                SELECT a.id FROM alumnos a
+                JOIN rutas r ON r.id = a.ruta_id
+                WHERE r.colegio_id = $1
+            )
+        `, [colegioId]);
+
+        await client.query(`
+            DELETE FROM programacion_rutas
+            WHERE alumno_id IN (
+                SELECT a.id FROM alumnos a
+                JOIN rutas r ON r.id = a.ruta_id
+                WHERE r.colegio_id = $1
+            )
+        `, [colegioId]);
+
         // a. Ausencias
         await client.query(`
             DELETE FROM ausencias 
@@ -375,7 +394,9 @@ const eliminarColegioSuperAdmin = async (req, res) => {
 
 const editarColegioSuperAdmin = async (req, res) => {
     const { colegioId } = req.params;
-    const { nombre, logo_url, plan, dias_prueba_restantes } = req.body;
+    const { nombre, logo_url, plan, dias_prueba_restantes, dias_prueba, diasPrueba } = req.body;
+    const diasPruebaRestantes =
+        dias_prueba_restantes ?? dias_prueba ?? diasPrueba ?? null;
 
     try {
         const resultado = await pool.query(
@@ -386,7 +407,7 @@ const editarColegioSuperAdmin = async (req, res) => {
                  dias_prueba_restantes = COALESCE($4, dias_prueba_restantes)
              WHERE id = $5
              RETURNING *`,
-            [nombre, logo_url, plan, dias_prueba_restantes, colegioId]
+            [nombre, logo_url, plan, diasPruebaRestantes, colegioId]
         );
 
         if (resultado.rows.length === 0) {
@@ -494,6 +515,21 @@ const asignarAdminSuperAdmin = async (req, res) => {
         if (colegio.rows.length === 0) {
             await client.query('ROLLBACK');
             return res.status(404).json({ error: 'Colegio no encontrado' });
+        }
+
+        if (colegio.rows[0].admin_id) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ error: 'Este colegio ya tiene un administrador asignado. Desvinculalo antes de asignar otro.' });
+        }
+
+        const superAdminExistente = await client.query(
+            'SELECT id FROM super_admins WHERE LOWER(email) = $1 LIMIT 1',
+            [emailNormalizado]
+        );
+
+        if (superAdminExistente.rows.length > 0) {
+            await client.query('ROLLBACK');
+            return res.status(400).json({ error: 'No puedes asignar como administrador de colegio un correo que ya pertenece a un superadministrador' });
         }
 
         const usuario = await client.query('SELECT * FROM usuarios WHERE LOWER(email) = $1', [emailNormalizado]);

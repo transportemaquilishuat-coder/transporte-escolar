@@ -261,7 +261,8 @@ export default function PantallaSuperAdmin({ navigation }) {
       await editarColegio(colegioEditar.id, {
         nombre: colegioEditar.nombre,
         plan: colegioEditar.plan,
-        dias_prueba: Number(colegioEditar.dias_prueba),
+        dias_prueba_restantes: Number(colegioEditar.dias_prueba_restantes),
+        dias_prueba: Number(colegioEditar.dias_prueba_restantes),
       });
       setModalEditarColegio(false);
       await refrescarVista(true);
@@ -905,8 +906,8 @@ export default function PantallaSuperAdmin({ navigation }) {
               style={styles.input}
               placeholder="Dias de prueba"
               keyboardType="numeric"
-              value={String(colegioEditar?.dias_prueba || '0')}
-              onChangeText={(text) => setColegioEditar({ ...colegioEditar, dias_prueba: text })}
+              value={String(colegioEditar?.dias_prueba_restantes ?? '0')}
+              onChangeText={(text) => setColegioEditar({ ...colegioEditar, dias_prueba_restantes: text })}
               placeholderTextColor={THEME.textSecondary}
             />
             <View style={styles.modalButtons}>

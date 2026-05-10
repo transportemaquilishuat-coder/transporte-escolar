@@ -1,0 +1,510 @@
+◇ injected env (4) from .env // tip: ◈ encrypted .env [www.dotenvx.com]
+◇ injected env (0) from .env // tip: ◈ encrypted .env [www.dotenvx.com]
+[DB] Configurando Pool con: { host: 'Usando connectionString', port: 5432, ssl: true }
+◇ injected env (0) from .env // tip: ◈ secrets for agents [www.dotenvx.com]
+◇ injected env (0) from .env // tip: ⌘ suppress logs { quiet: true }
+◇ injected env (0) from .env // tip: ⌁ auth for agents [www.vestauth.com]
+◇ injected env (0) from .env // tip: ◈ secrets for agents [www.dotenvx.com]
+◇ injected env (0) from .env // tip: ⌘ custom filepath { path: '/custom/path/.env' }
+◇ injected env (0) from .env // tip: ◈ secrets for agents [www.dotenvx.com]
+✅ PostgreSQL conectado
+[DB] Verificando esquema completo...
+[DB] Super Admins oficiales verificados/creados.
+[DB] Esquema verificado completamente.
+✅ Servidor corriendo en puerto 3000
+🌐 BASE_URL configurada: http://127.0.0.1:3000
+[2026-05-08T04:05:05.385Z] GET /health
+[2026-05-08T04:05:12.433Z] POST /api/auth/login
+Body: { email: 'superadmin.pruebas@transporte.local', password: '***' }
+[LOGIN] Intento para: superadmin.pruebas@transporte.local
+[LOGIN] Buscando en super_admins: superadmin.pruebas@transporte.local
+[LOGIN] Superadmin encontrado: superadmin.pruebas@transporte.local. Verificando password...
+[LOGIN] Superadmin superadmin.pruebas@transporte.local: Éxito total
+[2026-05-08T04:05:12.814Z] POST /api/auth/login
+Body: { email: 'admin.pruebas@transporte.local', password: '***' }
+[LOGIN] Intento para: admin.pruebas@transporte.local
+[LOGIN] Buscando en super_admins: admin.pruebas@transporte.local
+[LOGIN] Usuario admin.pruebas@transporte.local: No encontrado
+[2026-05-08T04:05:13.056Z] POST /api/auth/login
+Body: { email: 'conductor.pruebas@transporte.local', password: '***' }
+[LOGIN] Intento para: conductor.pruebas@transporte.local
+[LOGIN] Buscando en super_admins: conductor.pruebas@transporte.local
+[LOGIN] Usuario conductor.pruebas@transporte.local: No encontrado
+[2026-05-08T04:05:13.309Z] POST /api/auth/login
+Body: { email: 'padre.pruebas@transporte.local', password: '***' }
+[LOGIN] Intento para: padre.pruebas@transporte.local
+[LOGIN] Buscando en super_admins: padre.pruebas@transporte.local
+[LOGIN] Usuario padre.pruebas@transporte.local: No encontrado
+[2026-05-08T04:06:25.573Z] POST /api/auth/login
+Body: { email: 'superadmin.pruebas@transporte.local', password: '***' }
+[LOGIN] Intento para: superadmin.pruebas@transporte.local
+[LOGIN] Buscando en super_admins: superadmin.pruebas@transporte.local
+[LOGIN] Superadmin encontrado: superadmin.pruebas@transporte.local. Verificando password...
+[LOGIN] Superadmin superadmin.pruebas@transporte.local: Éxito total
+[2026-05-08T04:06:26.917Z] POST /api/auth/login
+Body: { email: 'admin.pruebas@transporte.local', password: '***' }
+[LOGIN] Intento para: admin.pruebas@transporte.local
+[LOGIN] Buscando en super_admins: admin.pruebas@transporte.local
+[LOGIN] Usuario admin.pruebas@transporte.local (admin): Éxito
+[2026-05-08T04:06:27.342Z] POST /api/auth/login
+Body: { email: 'conductor.pruebas@transporte.local', password: '***' }
+[LOGIN] Intento para: conductor.pruebas@transporte.local
+[LOGIN] Buscando en super_admins: conductor.pruebas@transporte.local
+[LOGIN] Usuario conductor.pruebas@transporte.local (conductor): Éxito
+[2026-05-08T04:06:27.908Z] POST /api/auth/login
+Body: { email: 'padre.pruebas@transporte.local', password: '***' }
+[LOGIN] Intento para: padre.pruebas@transporte.local
+[LOGIN] Buscando en super_admins: padre.pruebas@transporte.local
+[LOGIN] Usuario padre.pruebas@transporte.local (padre): Éxito
+[2026-05-08T04:06:52.473Z] POST /api/auth/login
+Body: { email: 'superadmin.pruebas@transporte.local', password: '***' }
+[LOGIN] Intento para: superadmin.pruebas@transporte.local
+[LOGIN] Buscando en super_admins: superadmin.pruebas@transporte.local
+[LOGIN] Superadmin encontrado: superadmin.pruebas@transporte.local. Verificando password...
+[LOGIN] Superadmin superadmin.pruebas@transporte.local: Éxito total
+[2026-05-08T04:06:52.831Z] POST /api/auth/login
+Body: { email: 'admin.pruebas@transporte.local', password: '***' }
+[LOGIN] Intento para: admin.pruebas@transporte.local
+[LOGIN] Buscando en super_admins: admin.pruebas@transporte.local
+[LOGIN] Usuario admin.pruebas@transporte.local (admin): Éxito
+[2026-05-08T04:06:53.288Z] POST /api/auth/login
+Body: { email: 'conductor.pruebas@transporte.local', password: '***' }
+[LOGIN] Intento para: conductor.pruebas@transporte.local
+[LOGIN] Buscando en super_admins: conductor.pruebas@transporte.local
+[LOGIN] Usuario conductor.pruebas@transporte.local (conductor): Éxito
+[2026-05-08T04:06:53.706Z] POST /api/auth/login
+Body: { email: 'padre.pruebas@transporte.local', password: '***' }
+[LOGIN] Intento para: padre.pruebas@transporte.local
+[LOGIN] Buscando en super_admins: padre.pruebas@transporte.local
+[LOGIN] Usuario padre.pruebas@transporte.local (padre): Éxito
+[2026-05-08T04:06:54.087Z] GET /api/vinculaciones/superadmin/colegios
+--- AUTH CHECK ---
+method: GET
+path: /api/vinculaciones/superadmin/colegios
+authorization header: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwiZW1haWwiOiJzdXBlcmFkbWluLnBydWViYXNAdHJhbnNwb3J0ZS5sb2NhbCIsInJvbCI6InN1cGVyX2FkbWluIiwidGlwbyI6InN1cGVyX2FkbWluIiwiaWF0IjoxNzc4MjEzMjEyLCJleHAiOjE4MDk3NDkyMTJ9.S3vCs51WnTalWIQq2petRnVuq2cB7ViSJWUE0aZAdyM
+token exists: true
+token preview: eyJhbGciOiJIUzI1...
+decoded payload: {
+  id: 1,
+  email: 'superadmin.pruebas@transporte.local',
+  rol: 'super_admin',
+  tipo: 'super_admin',
+  iat: 1778213212,
+  exp: 1809749212
+}
+[LISTAR COLEGIOS] req.user: {
+  id: 1,
+  email: 'superadmin.pruebas@transporte.local',
+  rol: 'super_admin',
+  tipo: 'super_admin',
+  iat: 1778213212,
+  exp: 1809749212
+}
+[LISTAR COLEGIOS] total: 5
+[LISTAR COLEGIOS] primeros: [
+  {
+    id: 5,
+    nombre: 'Colegio Desarrollo',
+    logo_url: null,
+    plan: 'activo',
+    activo: true,
+    estado_vinculacion: 'activo',
+    dias_prueba_restantes: 30,
+    creado_en: 2026-05-08T10:06:13.678Z,
+    admin_id: 5,
+    tiene_admin: true,
+    admin_nombre: 'Marta Admin',
+    admin_email: 'admin.pruebas@transporte.local',
+    admin_telefono: '7000-0101'
+  },
+  {
+    id: 3,
+    nombre: 'Colegio El Sagrado Corazón',
+    logo_url: null,
+    plan: 'trial',
+    activo: true,
+    estado_vinculacion: 'pendiente_vinculacion',
+    dias_prueba_restantes: 30,
+    creado_en: 2026-05-07T07:17:11.490Z,
+    admin_id: null,
+    tiene_admin: false,
+    admin_nombre: null,
+    admin_email: null,
+    admin_telefono: null
+  },
+  {
+    id: 1,
+    nombre: 'Colegio San José',
+    logo_url: null,
+    plan: 'activo',
+    activo: true,
+    estado_vinculacion: 'pendiente_vinculacion',
+    dias_prueba_restantes: 30,
+    creado_en: 2026-05-07T07:17:11.490Z,
+    admin_id: null,
+    tiene_admin: false,
+    admin_nombre: null,
+    admin_email: null,
+    admin_telefono: null
+  },
+  {
+    id: 2,
+    nombre: 'Colegio Santa María',
+    logo_url: null,
+    plan: 'trial',
+    activo: true,
+    estado_vinculacion: 'pendiente_vinculacion',
+    dias_prueba_restantes: 30,
+    creado_en: 2026-05-07T07:17:11.490Z,
+    admin_id: null,
+    tiene_admin: false,
+    admin_nombre: null,
+    admin_email: null,
+    admin_telefono: null
+  },
+  {
+    id: 4,
+    nombre: 'Lamatepec ',
+    logo_url: null,
+    plan: 'trial',
+    activo: false,
+    estado_vinculacion: 'pendiente_vinculacion',
+    dias_prueba_restantes: 15,
+    creado_en: 2026-05-07T23:18:23.850Z,
+    admin_id: null,
+    tiene_admin: false,
+    admin_nombre: null,
+    admin_email: null,
+    admin_telefono: null
+  }
+]
+[2026-05-08T04:06:54.219Z] POST /api/vinculaciones/superadmin/colegios/5/codigo
+Body: { maxUsos: 1, diasValidez: 1, password: '***' }
+--- AUTH CHECK ---
+method: POST
+path: /api/vinculaciones/superadmin/colegios/5/codigo
+authorization header: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwiZW1haWwiOiJzdXBlcmFkbWluLnBydWViYXNAdHJhbnNwb3J0ZS5sb2NhbCIsInJvbCI6InN1cGVyX2FkbWluIiwidGlwbyI6InN1cGVyX2FkbWluIiwiaWF0IjoxNzc4MjEzMjEyLCJleHAiOjE4MDk3NDkyMTJ9.S3vCs51WnTalWIQq2petRnVuq2cB7ViSJWUE0aZAdyM
+token exists: true
+token preview: eyJhbGciOiJIUzI1...
+decoded payload: {
+  id: 1,
+  email: 'superadmin.pruebas@transporte.local',
+  rol: 'super_admin',
+  tipo: 'super_admin',
+  iat: 1778213212,
+  exp: 1809749212
+}
+[CODIGO ADMIN] req.user: {
+  id: 1,
+  email: 'superadmin.pruebas@transporte.local',
+  rol: 'super_admin',
+  tipo: 'super_admin',
+  iat: 1778213212,
+  exp: 1809749212
+}
+[CODIGO ADMIN] req.params: [Object: null prototype] { colegioId: '5' }
+[CODIGO ADMIN] req.body: { maxUsos: 1, diasValidez: 1 }
+[CODIGO ADMIN] colegio encontrado: { id: 5, nombre: 'Colegio Desarrollo', admin_id: 5 }
+[2026-05-08T04:06:54.348Z] GET /api/vinculaciones/superadmin/codigos
+--- AUTH CHECK ---
+method: GET
+path: /api/vinculaciones/superadmin/codigos
+authorization header: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwiZW1haWwiOiJzdXBlcmFkbWluLnBydWViYXNAdHJhbnNwb3J0ZS5sb2NhbCIsInJvbCI6InN1cGVyX2FkbWluIiwidGlwbyI6InN1cGVyX2FkbWluIiwiaWF0IjoxNzc4MjEzMjEyLCJleHAiOjE4MDk3NDkyMTJ9.S3vCs51WnTalWIQq2petRnVuq2cB7ViSJWUE0aZAdyM
+token exists: true
+token preview: eyJhbGciOiJIUzI1...
+decoded payload: {
+  id: 1,
+  email: 'superadmin.pruebas@transporte.local',
+  rol: 'super_admin',
+  tipo: 'super_admin',
+  iat: 1778213212,
+  exp: 1809749212
+}
+[2026-05-08T04:06:54.475Z] GET /api/vinculaciones/admin/conductores
+--- AUTH CHECK ---
+method: GET
+path: /api/vinculaciones/admin/conductores
+authorization header: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6NSwiZW1haWwiOiJhZG1pbi5wcnVlYmFzQHRyYW5zcG9ydGUubG9jYWwiLCJyb2wiOiJhZG1pbiIsInRpcG8iOiJ1c3VhcmlvIiwiaWF0IjoxNzc4MjEzMjEzLCJleHAiOjE4MDk3NDkyMTN9.bWrtWbsezUiBeCK6bYEBeFIE_53l5klzD5zQeGyCLXM
+token exists: true
+token preview: eyJhbGciOiJIUzI1...
+decoded payload: {
+  id: 5,
+  email: 'admin.pruebas@transporte.local',
+  rol: 'admin',
+  tipo: 'usuario',
+  iat: 1778213213,
+  exp: 1809749213
+}
+[2026-05-08T04:06:54.725Z] POST /api/vinculaciones/admin/conductores/codigo
+Body: { maxUsos: 1, diasValidez: 1, password: '***' }
+--- AUTH CHECK ---
+method: POST
+path: /api/vinculaciones/admin/conductores/codigo
+authorization header: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6NSwiZW1haWwiOiJhZG1pbi5wcnVlYmFzQHRyYW5zcG9ydGUubG9jYWwiLCJyb2wiOiJhZG1pbiIsInRpcG8iOiJ1c3VhcmlvIiwiaWF0IjoxNzc4MjEzMjEzLCJleHAiOjE4MDk3NDkyMTN9.bWrtWbsezUiBeCK6bYEBeFIE_53l5klzD5zQeGyCLXM
+token exists: true
+token preview: eyJhbGciOiJIUzI1...
+decoded payload: {
+  id: 5,
+  email: 'admin.pruebas@transporte.local',
+  rol: 'admin',
+  tipo: 'usuario',
+  iat: 1778213213,
+  exp: 1809749213
+}
+[2026-05-08T04:06:55.087Z] GET /api/vinculaciones/admin/padres
+--- AUTH CHECK ---
+method: GET
+path: /api/vinculaciones/admin/padres
+authorization header: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6NSwiZW1haWwiOiJhZG1pbi5wcnVlYmFzQHRyYW5zcG9ydGUubG9jYWwiLCJyb2wiOiJhZG1pbiIsInRpcG8iOiJ1c3VhcmlvIiwiaWF0IjoxNzc4MjEzMjEzLCJleHAiOjE4MDk3NDkyMTN9.bWrtWbsezUiBeCK6bYEBeFIE_53l5klzD5zQeGyCLXM
+token exists: true
+token preview: eyJhbGciOiJIUzI1...
+decoded payload: {
+  id: 5,
+  email: 'admin.pruebas@transporte.local',
+  rol: 'admin',
+  tipo: 'usuario',
+  iat: 1778213213,
+  exp: 1809749213
+}
+[2026-05-08T04:06:55.338Z] GET /api/vinculaciones/conductor/padres
+--- AUTH CHECK ---
+method: GET
+path: /api/vinculaciones/conductor/padres
+authorization header: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6NiwiZW1haWwiOiJjb25kdWN0b3IucHJ1ZWJhc0B0cmFuc3BvcnRlLmxvY2FsIiwicm9sIjoiY29uZHVjdG9yIiwidGlwbyI6InVzdWFyaW8iLCJpYXQiOjE3NzgyMTMyMTMsImV4cCI6MTgwOTc0OTIxM30.jdBOyJzUjBkiLzGlx9tT_63zNSXRY29jdgnvXBiw8HI
+token exists: true
+token preview: eyJhbGciOiJIUzI1...
+decoded payload: {
+  id: 6,
+  email: 'conductor.pruebas@transporte.local',
+  rol: 'conductor',
+  tipo: 'usuario',
+  iat: 1778213213,
+  exp: 1809749213
+}
+[2026-05-08T04:06:55.494Z] POST /api/vinculaciones/conductor/padres/codigo
+Body: { maxUsos: 1, diasValidez: 1, password: '***' }
+--- AUTH CHECK ---
+method: POST
+path: /api/vinculaciones/conductor/padres/codigo
+authorization header: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6NiwiZW1haWwiOiJjb25kdWN0b3IucHJ1ZWJhc0B0cmFuc3BvcnRlLmxvY2FsIiwicm9sIjoiY29uZHVjdG9yIiwidGlwbyI6InVzdWFyaW8iLCJpYXQiOjE3NzgyMTMyMTMsImV4cCI6MTgwOTc0OTIxM30.jdBOyJzUjBkiLzGlx9tT_63zNSXRY29jdgnvXBiw8HI
+token exists: true
+token preview: eyJhbGciOiJIUzI1...
+decoded payload: {
+  id: 6,
+  email: 'conductor.pruebas@transporte.local',
+  rol: 'conductor',
+  tipo: 'usuario',
+  iat: 1778213213,
+  exp: 1809749213
+}
+[GEN_CODE_PADRE] Conductor 6 solicitando código
+[GEN_CODE_PADRE] Código generado: TDCHVEYC para conductor 6
+[2026-05-08T04:06:55.740Z] GET /api/asignaciones/conductor/6
+[2026-05-08T04:06:56.102Z] GET /api/padres/mis-hijos
+--- AUTH CHECK ---
+method: GET
+path: /api/padres/mis-hijos
+authorization header: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6NywiZW1haWwiOiJwYWRyZS5wcnVlYmFzQHRyYW5zcG9ydGUubG9jYWwiLCJyb2wiOiJwYWRyZSIsInRpcG8iOiJ1c3VhcmlvIiwiaWF0IjoxNzc4MjEzMjE0LCJleHAiOjE4MDk3NDkyMTR9.Ol_hNFSgM51J8eh9swrqO1-f64fqF36uqcZi5bFHfyo
+token exists: true
+token preview: eyJhbGciOiJIUzI1...
+decoded payload: {
+  id: 7,
+  email: 'padre.pruebas@transporte.local',
+  rol: 'padre',
+  tipo: 'usuario',
+  iat: 1778213214,
+  exp: 1809749214
+}
+[2026-05-08T04:06:56.239Z] POST /api/programacion
+Body: {
+  alumno_id: 3,
+  fecha: '2026-05-09',
+  tipo: 'devolucion',
+  parada: 'Parada prueba API',
+  latitude: 13.7,
+  longitude: -89.2,
+  nota: 'Prueba automatizada',
+  password: '***'
+}
+--- AUTH CHECK ---
+method: POST
+path: /api/programacion
+authorization header: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6NywiZW1haWwiOiJwYWRyZS5wcnVlYmFzQHRyYW5zcG9ydGUubG9jYWwiLCJyb2wiOiJwYWRyZSIsInRpcG8iOiJ1c3VhcmlvIiwiaWF0IjoxNzc4MjEzMjE0LCJleHAiOjE4MDk3NDkyMTR9.Ol_hNFSgM51J8eh9swrqO1-f64fqF36uqcZi5bFHfyo
+token exists: true
+token preview: eyJhbGciOiJIUzI1...
+decoded payload: {
+  id: 7,
+  email: 'padre.pruebas@transporte.local',
+  rol: 'padre',
+  tipo: 'usuario',
+  iat: 1778213214,
+  exp: 1809749214
+}
+[2026-05-08T04:06:56.503Z] GET /api/programacion/mis-hijos-cambios
+--- AUTH CHECK ---
+method: GET
+path: /api/programacion/mis-hijos-cambios
+authorization header: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6NywiZW1haWwiOiJwYWRyZS5wcnVlYmFzQHRyYW5zcG9ydGUubG9jYWwiLCJyb2wiOiJwYWRyZSIsInRpcG8iOiJ1c3VhcmlvIiwiaWF0IjoxNzc4MjEzMjE0LCJleHAiOjE4MDk3NDkyMTR9.Ol_hNFSgM51J8eh9swrqO1-f64fqF36uqcZi5bFHfyo
+token exists: true
+token preview: eyJhbGciOiJIUzI1...
+decoded payload: {
+  id: 7,
+  email: 'padre.pruebas@transporte.local',
+  rol: 'padre',
+  tipo: 'usuario',
+  iat: 1778213214,
+  exp: 1809749214
+}
+[2026-05-08T04:06:56.634Z] DELETE /api/programacion/1
+--- AUTH CHECK ---
+method: DELETE
+path: /api/programacion/1
+authorization header: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6NywiZW1haWwiOiJwYWRyZS5wcnVlYmFzQHRyYW5zcG9ydGUubG9jYWwiLCJyb2wiOiJwYWRyZSIsInRpcG8iOiJ1c3VhcmlvIiwiaWF0IjoxNzc4MjEzMjE0LCJleHAiOjE4MDk3NDkyMTR9.Ol_hNFSgM51J8eh9swrqO1-f64fqF36uqcZi5bFHfyo
+token exists: true
+token preview: eyJhbGciOiJIUzI1...
+decoded payload: {
+  id: 7,
+  email: 'padre.pruebas@transporte.local',
+  rol: 'padre',
+  tipo: 'usuario',
+  iat: 1778213214,
+  exp: 1809749214
+}
+[2026-05-08T04:06:56.887Z] POST /api/padres/hijos/3/generar-invitacion
+Body: { password: '***' }
+--- AUTH CHECK ---
+method: POST
+path: /api/padres/hijos/3/generar-invitacion
+authorization header: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6NywiZW1haWwiOiJwYWRyZS5wcnVlYmFzQHRyYW5zcG9ydGUubG9jYWwiLCJyb2wiOiJwYWRyZSIsInRpcG8iOiJ1c3VhcmlvIiwiaWF0IjoxNzc4MjEzMjE0LCJleHAiOjE4MDk3NDkyMTR9.Ol_hNFSgM51J8eh9swrqO1-f64fqF36uqcZi5bFHfyo
+token exists: true
+token preview: eyJhbGciOiJIUzI1...
+decoded payload: {
+  id: 7,
+  email: 'padre.pruebas@transporte.local',
+  rol: 'padre',
+  tipo: 'usuario',
+  iat: 1778213214,
+  exp: 1809749214
+}
+[2026-05-08T04:06:57.136Z] POST /api/vinculaciones/vincular-con-codigo
+Body: { codigo: '7CH4TFF3', password: '***' }
+--- AUTH CHECK ---
+method: POST
+path: /api/vinculaciones/vincular-con-codigo
+authorization header: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6NywiZW1haWwiOiJwYWRyZS5wcnVlYmFzQHRyYW5zcG9ydGUubG9jYWwiLCJyb2wiOiJwYWRyZSIsInRpcG8iOiJ1c3VhcmlvIiwiaWF0IjoxNzc4MjEzMjE0LCJleHAiOjE4MDk3NDkyMTR9.Ol_hNFSgM51J8eh9swrqO1-f64fqF36uqcZi5bFHfyo
+token exists: true
+token preview: eyJhbGciOiJIUzI1...
+decoded payload: {
+  id: 7,
+  email: 'padre.pruebas@transporte.local',
+  rol: 'padre',
+  tipo: 'usuario',
+  iat: 1778213214,
+  exp: 1809749214
+}
+[2026-05-08T04:07:11.416Z] POST /api/auth/login
+Body: { email: 'superadmin.pruebas@transporte.local', password: '***' }
+[LOGIN] Intento para: superadmin.pruebas@transporte.local
+[LOGIN] Buscando en super_admins: superadmin.pruebas@transporte.local
+[LOGIN] Superadmin encontrado: superadmin.pruebas@transporte.local. Verificando password...
+[LOGIN] Superadmin superadmin.pruebas@transporte.local: Éxito total
+[2026-05-08T04:07:11.896Z] POST /api/vinculaciones/superadmin/colegios
+Body: {
+  nombre: 'Colegio API Temporal 1778213231893',
+  plan: 'trial',
+  dias_prueba_restantes: 1,
+  password: '***'
+}
+--- AUTH CHECK ---
+method: POST
+path: /api/vinculaciones/superadmin/colegios
+authorization header: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwiZW1haWwiOiJzdXBlcmFkbWluLnBydWViYXNAdHJhbnNwb3J0ZS5sb2NhbCIsInJvbCI6InN1cGVyX2FkbWluIiwidGlwbyI6InN1cGVyX2FkbWluIiwiaWF0IjoxNzc4MjEzMjMxLCJleHAiOjE4MDk3NDkyMzF9.7MCUlhYQxT4KIKfWxZC-lgP3pLHFmW9XLkjiR6HPxCw
+token exists: true
+token preview: eyJhbGciOiJIUzI1...
+decoded payload: {
+  id: 1,
+  email: 'superadmin.pruebas@transporte.local',
+  rol: 'super_admin',
+  tipo: 'super_admin',
+  iat: 1778213231,
+  exp: 1809749231
+}
+[CREAR COLEGIO] req.user: {
+  id: 1,
+  email: 'superadmin.pruebas@transporte.local',
+  rol: 'super_admin',
+  tipo: 'super_admin',
+  iat: 1778213231,
+  exp: 1809749231
+}
+[CREAR COLEGIO] req.body: {
+  nombre: 'Colegio API Temporal 1778213231893',
+  plan: 'trial',
+  dias_prueba_restantes: 1
+}
+[CREAR COLEGIO] payload final: {
+  nombre: 'Colegio API Temporal 1778213231893',
+  logo_url: null,
+  plan: 'trial',
+  activo: false,
+  dias_prueba_restantes: 30,
+  admin_id: null
+}
+[CREAR COLEGIO] insert result: {
+  id: 6,
+  nombre: 'Colegio API Temporal 1778213231893',
+  logo_url: null,
+  plan: 'trial',
+  activo: false,
+  dias_prueba_restantes: 30,
+  admin_id: null,
+  latitude: null,
+  longitude: null,
+  creado_en: 2026-05-08T10:07:12.319Z
+}
+[2026-05-08T04:07:12.159Z] POST /api/vinculaciones/superadmin/colegios/6/codigo
+Body: { maxUsos: 1, diasValidez: 1, password: '***' }
+--- AUTH CHECK ---
+method: POST
+path: /api/vinculaciones/superadmin/colegios/6/codigo
+authorization header: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwiZW1haWwiOiJzdXBlcmFkbWluLnBydWViYXNAdHJhbnNwb3J0ZS5sb2NhbCIsInJvbCI6InN1cGVyX2FkbWluIiwidGlwbyI6InN1cGVyX2FkbWluIiwiaWF0IjoxNzc4MjEzMjMxLCJleHAiOjE4MDk3NDkyMzF9.7MCUlhYQxT4KIKfWxZC-lgP3pLHFmW9XLkjiR6HPxCw
+token exists: true
+token preview: eyJhbGciOiJIUzI1...
+decoded payload: {
+  id: 1,
+  email: 'superadmin.pruebas@transporte.local',
+  rol: 'super_admin',
+  tipo: 'super_admin',
+  iat: 1778213231,
+  exp: 1809749231
+}
+[CODIGO ADMIN] req.user: {
+  id: 1,
+  email: 'superadmin.pruebas@transporte.local',
+  rol: 'super_admin',
+  tipo: 'super_admin',
+  iat: 1778213231,
+  exp: 1809749231
+}
+[CODIGO ADMIN] req.params: [Object: null prototype] { colegioId: '6' }
+[CODIGO ADMIN] req.body: { maxUsos: 1, diasValidez: 1 }
+[CODIGO ADMIN] colegio encontrado: { id: 6, nombre: 'Colegio API Temporal 1778213231893', admin_id: null }
+[CODIGO ADMIN] codigo generado: G7BYHFAP
+[2026-05-08T04:07:12.534Z] DELETE /api/vinculaciones/superadmin/colegios/6
+--- AUTH CHECK ---
+method: DELETE
+path: /api/vinculaciones/superadmin/colegios/6
+authorization header: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6MSwiZW1haWwiOiJzdXBlcmFkbWluLnBydWViYXNAdHJhbnNwb3J0ZS5sb2NhbCIsInJvbCI6InN1cGVyX2FkbWluIiwidGlwbyI6InN1cGVyX2FkbWluIiwiaWF0IjoxNzc4MjEzMjMxLCJleHAiOjE4MDk3NDkyMzF9.7MCUlhYQxT4KIKfWxZC-lgP3pLHFmW9XLkjiR6HPxCw
+token exists: true
+token preview: eyJhbGciOiJIUzI1...
+decoded payload: {
+  id: 1,
+  email: 'superadmin.pruebas@transporte.local',
+  rol: 'super_admin',
+  tipo: 'super_admin',
+  iat: 1778213231,
+  exp: 1809749231
+}
+[ELIMINAR COLEGIO] Iniciando eliminación de colegio ID: 6
+[ELIMINAR COLEGIO] Eliminando dependencias de: Colegio API Temporal 1778213231893
+[ELIMINAR COLEGIO] Colegio 6 eliminado exitosamente

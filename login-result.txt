@@ -1,0 +1,2 @@
+Status: 200
+Response: {"token":"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6NiwiZW1haWwiOiJhZG1pbi5wcnVlYmFzQHRyYW5zcG9ydGUubG9jYWwiLCJyb2wiOiJhZG1pbiIsInRpcG8iOiJ1c3VhcmlvIiwiaWF0IjoxNzc3NjAyNjc2LCJleHAiOjE4MDkxMzg2NzZ9.KV9ttHfFxoQ3XtQeewCoXad3RkU-owIxpaH_RKLz0qc","expiresIn":"365d","usuario":{"id":6,"nombre":"Marta Admin","email":"admin.pruebas@transporte.local","rol":"admin","telefono":"7000-0101","colegioId":4,"colegioNombre":"Colegio Desarrollo","logoUrl":null}}

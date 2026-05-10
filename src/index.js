@@ -159,7 +159,9 @@ io.on('connection', (socket) => {
 
         // Verificar desvío y notificar (también segmentado)
         if (datos.conductorId && datos.rutaId) {
-            fetch(`${BASE_URL}/api/desvios/verificar`, {
+            // Usar localhost interno para evitar problemas de DNS/Red externa en Railway
+            const internalUrl = `http://127.0.0.1:${PORT}`;
+            fetch(`${internalUrl}/api/desvios/verificar`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({

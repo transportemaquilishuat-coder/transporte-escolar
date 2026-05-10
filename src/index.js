@@ -6,7 +6,6 @@ const { Server } = require('socket.io');
 
 dotenv.config();
 
-const db = require('./database');
 const pool = require('./database');
 
 const app = express();
@@ -295,14 +294,8 @@ app.get('/api/admin/conductores-activos', (req, res) => {
     });
 });
 
-(async () => {
-    await db.ready;
-
-    server.listen(PORT, '0.0.0.0', () => {
-        console.log(`✅ Servidor corriendo en puerto ${PORT}`);
-        console.log(`🌐 BASE_URL configurada: ${BASE_URL}`);
-    });
-})().catch((err) => {
-    console.error('No se pudo iniciar el servidor:', err);
-    process.exit(1);
+server.listen(PORT, '0.0.0.0', () => {
+    console.log(`✅ Servidor corriendo en puerto ${PORT}`);
+    console.log(`🌐 BASE_URL configurada: ${BASE_URL}`);
 });
+

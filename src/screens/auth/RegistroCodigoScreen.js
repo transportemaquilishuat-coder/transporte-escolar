@@ -371,7 +371,11 @@ export default function RegistroCodigoScreen({ navigation, route }) {
 
   if (paso === 1) {
     return (
-      <View style={styles.container}>
+      <ScrollView 
+        style={styles.container} 
+        contentContainerStyle={{ flexGrow: 1, paddingBottom: 40 }}
+        keyboardShouldPersistTaps="always"
+      >
         <View style={styles.hero}>
           <View style={[styles.logoWrap, { backgroundColor: brandColor, shadowColor: brandColor }]}>
             {logoFuente ? <Image source={logoFuente} style={styles.logoImage} /> : <Text style={styles.logoText}>KG</Text>}
@@ -388,7 +392,7 @@ export default function RegistroCodigoScreen({ navigation, route }) {
             placeholder="ABC12345"
             placeholderTextColor="#444444"
             value={codigo}
-            onChangeText={setCodigo}
+            onChangeText={(t) => setCodigo(t)}
             autoCapitalize="characters"
             autoCorrect={false}
             maxLength={12}
@@ -420,13 +424,17 @@ export default function RegistroCodigoScreen({ navigation, route }) {
         >
           <Text style={styles.salirBtnText}>Cancelar y volver al login</Text>
         </TouchableOpacity>
-      </View>
+      </ScrollView>
     );
   }
 
   return (
     <View style={styles.container}>
-      <ScrollView contentContainerStyle={styles.contentContainer} showsVerticalScrollIndicator={false}>
+      <ScrollView 
+        contentContainerStyle={styles.contentContainer} 
+        showsVerticalScrollIndicator={false}
+        keyboardShouldPersistTaps="always"
+      >
         <View style={styles.headerRegistro}>
           <Text style={styles.tituloForm}>Completa tu registro</Text>
           <Text style={styles.subtituloForm}>

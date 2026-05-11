@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import {
   ActivityIndicator,
   Alert,
@@ -278,12 +279,13 @@ function LoginScreen({ navigation }) {
 
       <KeyboardAvoidingView
         style={styles.keyboard}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
       >
         <ScrollView
           style={styles.scroll}
           contentContainerStyle={[styles.scrollContent, isDesktop && styles.scrollContentDesktop]}
-          keyboardShouldPersistTaps="handled"
+          keyboardShouldPersistTaps="always"
           showsVerticalScrollIndicator={false}
         >
           <View style={[styles.shell, isDesktop && styles.shellDesktop]}>
@@ -376,11 +378,9 @@ function LoginScreen({ navigation }) {
                   placeholder="Correo electrónico"
                   placeholderTextColor={KIDGO_THEME.textSecondary}
                   value={email}
-                  onChangeText={setEmail}
+                  onChangeText={(t) => setEmail(t)}
                   keyboardType="email-address"
                   autoCapitalize="none"
-                  autoComplete="email"
-                  textContentType="emailAddress"
                 />
               </View>
 
@@ -391,10 +391,8 @@ function LoginScreen({ navigation }) {
                   placeholder="Contraseña"
                   placeholderTextColor={KIDGO_THEME.textSecondary}
                   value={password}
-                  onChangeText={setPassword}
+                  onChangeText={(t) => setPassword(t)}
                   secureTextEntry
-                  autoComplete="password"
-                  textContentType="password"
                 />
               </View>
 
@@ -513,37 +511,39 @@ export default function App() {
   }
 
   return (
-    <NavigationContainer>
-      <Stack.Navigator initialRouteName={pantallaInicial} screenOptions={{ headerShown: false }}>
-        <Stack.Screen name="Login" component={LoginScreen} />
-        <Stack.Screen name="Registro" component={PantallaRegistro} />
-        <Stack.Screen name="RegistroCodigo" component={RegistroCodigoScreen} />
-        <Stack.Screen name="SuperAdmin" component={PantallaSuperAdmin} />
-        <Stack.Screen name="Admin" component={PantallaAdmin} />
-        <Stack.Screen
-          name="AdminConductores"
-          component={AdminConductoresScreen}
-          options={{ headerShown: true, title: 'Gestion de Conductores' }}
-        />
-        <Stack.Screen
-          name="AdminPadres"
-          component={AdminPadresScreen}
-          options={{ headerShown: true, title: 'Gestion de Padres' }}
-        />
-        <Stack.Screen name="Conductor" component={PantallaConductor} />
-        <Stack.Screen
-          name="PerfilConductor"
-          component={PerfilConductor}
-          options={{ headerShown: true, title: 'Mi Perfil' }}
-        />
-        <Stack.Screen
-          name="ConductorPadres"
-          component={ConductorPadresScreen}
-          options={{ headerShown: true, title: 'Gestión de Padres' }}
-        />
-        <Stack.Screen name="Padre" component={PantallaPadre} />
-      </Stack.Navigator>
-    </NavigationContainer>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <NavigationContainer>
+        <Stack.Navigator initialRouteName={pantallaInicial} screenOptions={{ headerShown: false }}>
+          <Stack.Screen name="Login" component={LoginScreen} />
+          <Stack.Screen name="Registro" component={PantallaRegistro} />
+          <Stack.Screen name="RegistroCodigo" component={RegistroCodigoScreen} />
+          <Stack.Screen name="SuperAdmin" component={PantallaSuperAdmin} />
+          <Stack.Screen name="Admin" component={PantallaAdmin} />
+          <Stack.Screen
+            name="AdminConductores"
+            component={AdminConductoresScreen}
+            options={{ headerShown: true, title: 'Gestion de Conductores' }}
+          />
+          <Stack.Screen
+            name="AdminPadres"
+            component={AdminPadresScreen}
+            options={{ headerShown: true, title: 'Gestion de Padres' }}
+          />
+          <Stack.Screen name="Conductor" component={PantallaConductor} />
+          <Stack.Screen
+            name="PerfilConductor"
+            component={PerfilConductor}
+            options={{ headerShown: true, title: 'Mi Perfil' }}
+          />
+          <Stack.Screen
+            name="ConductorPadres"
+            component={ConductorPadresScreen}
+            options={{ headerShown: true, title: 'Gestión de Padres' }}
+          />
+          <Stack.Screen name="Padre" component={PantallaPadre} />
+        </Stack.Navigator>
+      </NavigationContainer>
+    </GestureHandlerRootView>
   );
 }
 
@@ -806,7 +806,6 @@ const styles = StyleSheet.create({
   inputShell: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
     backgroundColor: KIDGO_THEME.background,
     borderWidth: 1,
     borderColor: KIDGO_THEME.border,
@@ -819,6 +818,7 @@ const styles = StyleSheet.create({
     color: KIDGO_THEME.text,
     fontSize: 15,
     paddingVertical: 14,
+    marginLeft: 10,
   },
   errorBox: {
     backgroundColor: '#FEF2F2',

@@ -55,13 +55,11 @@ const crearHijoVacio = () => ({
 });
 
 export default function RegistroCodigoScreen({ navigation, route }) {
-  const { loading, error, infoCodigo, verificar, registrar, registrarConCodigo } = useRegistroCodigo();
+  const { loading, error, registrar } = useRegistroCodigo();
   const { branding } = useBranding();
   
-  const iniciarConDatos = route?.params?.iniciarConDatos || false;
   const destino = route?.params?.destino || '';
   
-  const [paso, setPaso] = useState(iniciarConDatos ? 2 : 1);
   const [codigo, setCodigo] = useState('');
   const [tokenSesion, setTokenSesion] = useState('');
   const [vinculandoCuenta, setVinculandoCuenta] = useState(false);
@@ -79,18 +77,15 @@ export default function RegistroCodigoScreen({ navigation, route }) {
   });
   const [hijosRegistro, setHijosRegistro] = useState([crearHijoVacio()]);
 
-  const mensaje = route?.params?.mensaje || 'Ingresa el codigo si quieres vincularte ahora. Tambien puedes crear tu cuenta sin codigo.';
   const tituloPantalla = useMemo(
-    () => TITULOS_POR_DESTINO[destino] || 'Registro con codigo',
+    () => TITULOS_POR_DESTINO[destino] || 'Registro de usuario',
     [destino]
   );
 
   const camposExtra = useMemo(() => {
-    if (infoCodigo?.tipo) return CAMPOS_EXTRA_POR_TIPO[infoCodigo.tipo] || [];
-    // Fallback si iniciamos con datos sin verificar codigo aun
     if (destino === 'conductor') return ['licencia', 'placa'];
     return [];
-  }, [infoCodigo, destino]);
+  }, [destino]);
 
   const logoFuente = branding.logoUri ? { uri: branding.logoUri } : null;
   const brandColor = branding.headerColor || KIDGO_THEME.primaryDark;
@@ -157,30 +152,6 @@ export default function RegistroCodigoScreen({ navigation, route }) {
     });
   };
 
-  const handleVerificarCodigo = async () => {
-    const codigoNormalizado = codigo.trim().toUpperCase();
-    if (!codigoNormalizado) {
-      Alert.alert('Error', 'Ingresa un codigo valido.');
-      return;
-    }
-
-    try {
-      await verificar(codigoNormalizado);
-      if (destino === 'padre') {
-        setHijosRegistro((prev) =>
-          prev.map((hijo, indice) => (
-            indice === 0 && !hijo.codigoConductor
-              ? { ...hijo, codigoConductor: codigoNormalizado }
-              : hijo
-          ))
-        );
-      }
-      setPaso(2);
-    } catch (err) {
-      Alert.alert('Codigo invalido', err.message);
-    }
-  };
-
   const handleRegistro = async () => {
     if (!datos.nombre.trim() || !datos.email.trim() || !datos.password.trim()) {
       Alert.alert('Error', 'Nombre, correo y contrasena son obligatorios.');
@@ -205,9 +176,7 @@ export default function RegistroCodigoScreen({ navigation, route }) {
 
     try {
       const hijosNormalizados = obtenerHijosNormalizados();
-      const primerCodigoHijo = hijosNormalizados[0]?.codigoConductor;
-      const codigoPrincipal = codigo.trim().toUpperCase() || primerCodigoHijo;
-      const rol = normalizarRolRegistro(destino || infoCodigo?.rol || infoCodigo?.tipo);
+      const rol = normalizarRolRegistro(destino);
       const payloadRegistro = {
         nombre: datos.nombre.trim(),
         email: datos.email.trim().toLowerCase(),
@@ -235,12 +204,7 @@ export default function RegistroCodigoScreen({ navigation, route }) {
         }));
       }
 
-      const resultado = codigoPrincipal
-        ? await registrarConCodigo({
-          ...payloadRegistro,
-          codigo: codigoPrincipal,
-        })
-        : await registrar(payloadRegistro);
+      const resultado = await registrar(payloadRegistro);
 
       if (resultado?.token && resultado?.usuario) {
         const usuarioSesion = {
@@ -252,7 +216,7 @@ export default function RegistroCodigoScreen({ navigation, route }) {
         await AsyncStorage.setItem('usuario', JSON.stringify(usuarioSesion));
         await registrarNotificaciones(usuarioSesion.id, resultado.token);
 
-        const codigosExtra = hijosNormalizados.filter((hijo) => hijo.codigoConductor && hijo.codigoConductor !== codigoPrincipal);
+        const codigosExtra = hijosNormalizados.filter((hijo) => hijo.codigoConductor);
         for (const hijo of codigosExtra) {
           await vincularConCodigo(hijo.codigoConductor, resultado.token, {
             hijo,
@@ -266,7 +230,7 @@ export default function RegistroCodigoScreen({ navigation, route }) {
         }
       }
 
-      const mensajeExito = codigo.trim() || hijosNormalizados.some((hijo) => hijo.codigoConductor)
+      const mensajeExito = hijosNormalizados.some((hijo) => hijo.codigoConductor)
         ? 'Tu cuenta fue creada y vinculada correctamente.'
         : 'Tu cuenta fue creada. Ahora puedes iniciar sesion y vincularte mas tarde.';
 
@@ -274,21 +238,23 @@ export default function RegistroCodigoScreen({ navigation, route }) {
         { text: 'Continuar', onPress: () => navegarSegunRol(resultado?.usuario) },
       ]);
     } catch (err) {
-      Alert.alert('Error', err.message);
+      Alert.alert('Error en registro', err.message);
     }
   };
 
   const manejarVincularCuentaExistente = async () => {
-    const codigoNormalizado = codigo.trim().toUpperCase();
     const hijosNormalizados = obtenerHijosNormalizados();
     const vinculacionesHijos = destino === 'padre'
       ? hijosNormalizados.map((hijo) => ({ codigo: hijo.codigoConductor, hijo })).filter((item) => item.codigo)
       : [];
+    
     const codigosHijos = vinculacionesHijos.map((item) => item.codigo);
-    const vinculacionesSueltas = [codigoNormalizado]
-      .filter((codigoActual) => codigoActual && !codigosHijos.includes(codigoActual))
-      .map((codigoActual) => ({ codigo: codigoActual, hijo: null }));
-    const vinculacionesAVincular = [...vinculacionesHijos, ...vinculacionesSueltas];
+    const vinculacionSuelta = codigo.trim().toUpperCase();
+    
+    const vinculacionesAVincular = [...vinculacionesHijos];
+    if (vinculacionSuelta && !codigosHijos.includes(vinculacionSuelta)) {
+      vinculacionesAVincular.push({ codigo: vinculacionSuelta, hijo: null });
+    }
 
     if (vinculacionesAVincular.length === 0) {
       Alert.alert('Codigo requerido', 'Ingresa al menos un codigo de invitacion.');
@@ -372,65 +338,6 @@ export default function RegistroCodigoScreen({ navigation, route }) {
     return null;
   };
 
-  if (paso === 1) {
-    return (
-      <ScrollView 
-        style={styles.container} 
-        contentContainerStyle={{ flexGrow: 1, paddingBottom: 40 }}
-        keyboardShouldPersistTaps="always"
-      >
-        <View style={styles.hero}>
-          <View style={[styles.logoWrap, { backgroundColor: brandColor, shadowColor: brandColor }]}>
-            {logoFuente ? <Image source={logoFuente} style={styles.logoImage} /> : <Text style={styles.logoText}>KG</Text>}
-          </View>
-          <Text style={[styles.kicker, { color: brandColor }]}>{branding.appName || 'KidsGo!'}</Text>
-          <Text style={styles.titulo}>{tituloPantalla}</Text>
-          <Text style={styles.subtitulo}>{mensaje}</Text>
-        </View>
-
-        <View style={styles.formSection}>
-          <Text style={styles.labelInput}>Ingresa tu codigo</Text>
-          <TextInput
-            style={[styles.inputCodigo, { borderColor: brandColor, color: '#FFFFFF' }]}
-            placeholder="ABC12345"
-            placeholderTextColor="#444444"
-            value={codigo}
-            onChangeText={(t) => setCodigo(t)}
-            autoCapitalize="characters"
-            autoCorrect={false}
-            maxLength={12}
-          />
-
-          {error ? <Text style={styles.errorTexto}>{error}</Text> : null}
-
-          {loading || vinculandoCuenta ? (
-            <ActivityIndicator size="large" color={brandColor} style={styles.loader} />
-          ) : (
-            <>
-              <TouchableOpacity style={[styles.btn, { backgroundColor: brandColor }]} onPress={handleVerificarCodigo}>
-                <Text style={styles.btnText}>Verificar codigo</Text>
-              </TouchableOpacity>
-              
-              <TouchableOpacity 
-                style={[styles.btn, { backgroundColor: 'transparent', borderWidth: 1, borderColor: brandColor, marginTop: 12 }]} 
-                onPress={() => setPaso(2)}
-              >
-                <Text style={[styles.btnText, { color: brandColor }]}>Registrarme sin codigo</Text>
-              </TouchableOpacity>
-            </>
-          )}
-        </View>
-
-        <TouchableOpacity
-          style={styles.salirBtn}
-          onPress={() => navigation.replace('Login')}
-        >
-          <Text style={styles.salirBtnText}>Cancelar y volver al login</Text>
-        </TouchableOpacity>
-      </ScrollView>
-    );
-  }
-
   return (
     <View style={styles.container}>
       <ScrollView 
@@ -446,32 +353,6 @@ export default function RegistroCodigoScreen({ navigation, route }) {
               : 'Ingresa tus datos personales. El codigo de vinculacion es opcional.'}
           </Text>
         </View>
-
-        {infoCodigo ? (
-          <View style={[styles.infoBox, { borderColor: brandColor + '40' }]}>
-            <View style={styles.infoRow}>
-              <View style={[styles.infoIcon, { backgroundColor: brandColor }]}>
-                <Text style={styles.infoIconText}>i</Text>
-              </View>
-              <View>
-                <Text style={styles.infoLabel}>Tipo de vinculacion</Text>
-                <Text style={styles.infoValue}>{infoCodigo.tipo || 'No definido'}</Text>
-              </View>
-            </View>
-            <View style={styles.infoDivider} />
-            <View style={styles.infoRow}>
-              <View style={[styles.infoIcon, { backgroundColor: '#F59E0B' }]}>
-                <Text style={styles.infoIconText}>H</Text>
-              </View>
-              <View>
-                <Text style={styles.infoLabel}>Colegio</Text>
-                <Text style={styles.infoValue}>
-                  {infoCodigo.colegio || infoCodigo.colegio_nombre || 'No disponible'}
-                </Text>
-              </View>
-            </View>
-          </View>
-        ) : null}
 
         <View style={styles.formContainer}>
           <Text style={styles.labelField}>Nombre completo</Text>

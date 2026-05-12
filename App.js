@@ -424,13 +424,6 @@ function LoginScreen({ navigation }) {
                 >
                   <Text style={styles.linkChipText}>Crear cuenta</Text>
                 </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={styles.linkChipAlt}
-                  onPress={() => navigation.navigate('RegistroCodigo')}
-                >
-                  <Text style={styles.linkChipAltText}>Tengo un código de invitación</Text>
-                </TouchableOpacity>
               </View>
 
               <View style={styles.formFooterCard}>

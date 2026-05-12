@@ -750,21 +750,41 @@ export default function PantallaPadre({ navigation }) {
 
   const handleVincularHijo = async () => {
     if (!codigoVinculacion.trim()) {
-      Alert.alert('Error', 'Ingresa el codigo de vinculacion.');
+      Alert.alert('Error', 'Ingresa el código de vinculación.');
       return;
     }
 
     setLoadingVincular(true);
     try {
-      const token = obtenerToken() || await AsyncStorage.getItem('token');
-      await vincularConCodigo(codigoVinculacion.trim().toUpperCase(), token);
+      const res = await fetch(`${SERVIDOR}/api/vinculaciones/vincular-con-codigo`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(await obtenerAuthHeaders()) },
+        body: JSON.stringify({ codigo: codigoVinculacion.trim().toUpperCase() }),
+      });
+
+      const datos = await res.json();
+      if (!res.ok) throw new Error(datos.error || 'No se pudo completar la vinculación');
 
       setModalVincular(false);
       setCodigoVinculacion('');
-      Alert.alert('Exito', 'Hijo vinculado correctamente.');
+
+      Alert.alert(
+        '¡Listo!',
+        `Tus hijos han sido vinculados correctamente. ${datos.desc || ''}`,
+        [
+          {
+            text: 'Configurar recogida',
+            onPress: () => {
+              setSeccionSheet('info');
+              abrirSheet();
+            }
+          },
+          { text: 'Entendido' }
+        ]
+      );
       await cargarHijos();
     } catch (e) {
-      Alert.alert('Error', e.message || 'No se pudo vincular el hijo.');
+      Alert.alert('Error', e.message || 'No se pudo vincular.');
     } finally {
       setLoadingVincular(false);
     }
@@ -1052,7 +1072,21 @@ export default function PantallaPadre({ navigation }) {
             <View style={styles.childNoRouteText}>
               <Text style={styles.childNoRouteTitle}>Ruta no asignada</Text>
               <Text style={styles.childNoRouteDesc} numberOfLines={2}>
-                {hijoSeleccionado.nombre.split(' ')[0]} no tiene bus. Usa "Vincular hijo" arriba con el código del conductor.
+                {hijoSeleccionado.nombre.split(' ')[0]} no tiene bus. Usa el código del conductor arriba.
+              </Text>
+            </View>
+          </View>
+        )}
+
+        {hijoSeleccionado && hijoSeleccionado.rutaId && (!hijoSeleccionado.latitude || !hijoSeleccionado.longitude) && !cargandoHijos && (
+          <View style={[styles.childNoRouteOverlay, { backgroundColor: 'rgba(239, 246, 255, 0.95)', borderColor: '#3B82F6' }]}>
+            <View style={[styles.childNoRouteIcon, { backgroundColor: '#3B82F6' }]}>
+              <MapPin size={18} color="#fff" />
+            </View>
+            <View style={styles.childNoRouteText}>
+              <Text style={[styles.childNoRouteTitle, { color: '#1E40AF' }]}>Configurar recogida</Text>
+              <Text style={[styles.childNoRouteDesc, { color: '#1E40AF' }]} numberOfLines={2}>
+                Por favor, mantén presionado el mapa para indicar dónde debemos recoger a {hijoSeleccionado.nombre.split(' ')[0]}.
               </Text>
             </View>
           </View>

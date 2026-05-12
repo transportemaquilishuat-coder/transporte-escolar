@@ -66,6 +66,7 @@ const THEME = {
   success: '#34C759',
   error: '#FF3B30',
   warning: '#FF9500',
+  info: '#5856D6',
 };
 
 const obtenerAuthHeaders = async () => {
@@ -102,6 +103,38 @@ export default function PantallaConductor({ navigation }) {
     return (hora >= 5 && hora < 12) ? 'mañana' : 'tarde';
   });
   const [modalAlumnoVisible, setModalAlumnoVisible] = useState(false);
+  const [modalColegioVisible, setModalColegioVisible] = useState(false);
+  const [codigoColegio, setCodigoColegio] = useState('');
+  const [loadingVincular, setLoadingVincular] = useState(false);
+
+  // ... (dentro de las funciones)
+  const handleVincularColegio = async () => {
+    if (!codigoColegio.trim()) {
+      Alert.alert('Error', 'Ingresa el código del colegio.');
+      return;
+    }
+
+    setLoadingVincular(true);
+    try {
+      const res = await fetch(`${SERVIDOR}/api/vinculaciones/vincular-con-codigo`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(await obtenerAuthHeaders()) },
+        body: JSON.stringify({ codigo: codigoColegio.trim().toUpperCase() }),
+      });
+
+      const datos = await res.json();
+      if (!res.ok) throw new Error(datos.error || 'No se pudo completar la vinculación');
+
+      setModalColegioVisible(false);
+      setCodigoColegio('');
+      Alert.alert('¡Éxito!', `Tu ruta y alumnos han sido vinculados correctamente. ${datos.desc || ''}`);
+      // Recargar datos si es necesario
+    } catch (e) {
+      Alert.alert('Error', e.message || 'No se pudo vincular al colegio.');
+    } finally {
+      setLoadingVincular(false);
+    }
+  };
   const [loadingGestion, setLoadingGestion] = useState(false);
   const [mostrarAvisoAusentes, setMostrarAvisoAusentes] = useState(false);
   const [nuevoAlumno, setNuevoAlumno] = useState({
@@ -998,6 +1031,13 @@ export default function PantallaConductor({ navigation }) {
                   <Plus size={20} color="#fff" strokeWidth={2.5} />
                   <Text style={styles.accionCardTexto}>Nuevo Alumno</Text>
                 </TouchableOpacity>
+                <TouchableOpacity 
+                  style={[styles.accionCard, { backgroundColor: THEME.info }]} 
+                  onPress={() => setModalColegioVisible(true)}
+                >
+                  <Navigation size={20} color="#fff" strokeWidth={2.5} />
+                  <Text style={styles.accionCardTexto}>Vincular Colegio</Text>
+                </TouchableOpacity>
               </View>
 
               {/* LISTA COMPLETA CON ACCIONES DE GESTIÓN */}
@@ -1196,6 +1236,60 @@ export default function PantallaConductor({ navigation }) {
                     <>
                       <Check size={18} color="#fff" strokeWidth={2.5} />
                       <Text style={styles.modalBtnConfirmarTexto}>Inscribir</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
+
+        {/* MODAL PARA VINCULAR COLEGIO */}
+        <Modal
+          visible={modalColegioVisible}
+          animationType="fade"
+          transparent={true}
+        >
+          <View style={[styles.modalOverlay, { justifyContent: 'center', padding: 20 }]}>
+            <View style={[styles.modalContainer, { borderRadius: 20, maxHeight: 'auto' }]}>
+              <View style={styles.modalHeader}>
+                <View>
+                  <Text style={styles.modalTitulo}>Vincular Colegio</Text>
+                  <Text style={styles.modalSubtitulo}>Asocia tu ruta y alumnos a una institución.</Text>
+                </View>
+                <TouchableOpacity onPress={() => setModalColegioVisible(false)} style={styles.modalCloseBtn}>
+                  <X size={24} color={THEME.textSecondary} strokeWidth={2} />
+                </TouchableOpacity>
+              </View>
+
+              <Text style={styles.modalLabel}>Código del Colegio</Text>
+              <TextInput
+                style={[styles.modalInput, { fontSize: 20, textAlign: 'center', letterSpacing: 2, color: THEME.secondary }]}
+                placeholder="COL-12345"
+                value={codigoColegio}
+                onChangeText={setCodigoColegio}
+                autoCapitalize="characters"
+                placeholderTextColor={THEME.textSecondary}
+              />
+
+              <View style={styles.modalBotones}>
+                <TouchableOpacity
+                  style={styles.modalBtnCancelar}
+                  onPress={() => setModalColegioVisible(false)}
+                >
+                  <Text style={styles.modalBtnCancelarTexto}>Cancelar</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.modalBtnConfirmar, { backgroundColor: THEME.secondary }, (loadingVincular || !codigoColegio.trim()) && styles.btnDeshabilitado]}
+                  onPress={handleVincularColegio}
+                  disabled={loadingVincular || !codigoColegio.trim()}
+                >
+                  {loadingVincular ? (
+                    <ActivityIndicator color="#fff" size="small" />
+                  ) : (
+                    <>
+                      <Navigation size={18} color="#fff" strokeWidth={2.5} />
+                      <Text style={styles.modalBtnConfirmarTexto}>Vincular</Text>
                     </>
                   )}
                 </TouchableOpacity>

@@ -133,6 +133,8 @@ export default function PantallaPadre({ navigation }) {
   // Ausencia
   const [modalAusencia, setModalAusencia] = useState(false);
   const [motivoAusencia, setMotivoAusencia] = useState('');
+  const [diasAusencia, setDiasAusencia] = useState(1);
+  const [hijosAusentesIds, setHijosAusentesIds] = useState([]);
   const [ausenciaReportada, setAusenciaReportada] = useState(false);
   const [loadingAusencia, setLoadingAusencia] = useState(false);
 
@@ -365,6 +367,16 @@ export default function PantallaPadre({ navigation }) {
       socket.off('ruta:evento');
     };
   }, [hijos, hijoSeleccionadoId]);
+
+  useEffect(() => {
+    const verificarHint = async () => {
+      const configurado = await AsyncStorage.getItem(`punto_configurado_${usuario?.id}`);
+      if (configurado === 'true') {
+        setMostrarPickupHint(false);
+      }
+    };
+    if (usuario?.id) verificarHint();
+  }, [usuario]);
 
   useEffect(() => {
     if (hijoSeleccionado) {
@@ -700,21 +712,40 @@ export default function PantallaPadre({ navigation }) {
   };
 
   const reportarAusencia = async () => {
-    if (!hijoSeleccionado) return;
+    if (hijosAusentesIds.length === 0) {
+      Alert.alert('Error', 'Selecciona al menos un hijo.');
+      return;
+    }
+    
     setLoadingAusencia(true);
     try {
-      await fetch(`${SERVIDOR}/api/asignaciones/ausencia`, {
+      const response = await fetch(`${SERVIDOR}/api/asignaciones/ausencia-multiple`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...(await obtenerAuthHeaders()) },
-        body: JSON.stringify({ alumnoId: hijoSeleccionado.id, motivo: motivoAusencia || 'Sin especificar' }),
+        body: JSON.stringify({ 
+          alumnosIds: hijosAusentesIds, 
+          motivo: motivoAusencia || 'Sin especificar',
+          dias: diasAusencia
+        }),
       });
+
+      if (!response.ok) throw new Error('Error al reportar ausencia');
+
       setAusenciaReportada(true);
       setModalAusencia(false);
+      Alert.alert('Éxito', 'Ausencia reportada correctamente.');
+      cargarHijos();
     } catch (e) {
-      console.log(e);
+      Alert.alert('Error', 'No se pudo reportar la ausencia. Intenta más tarde.');
     } finally {
       setLoadingAusencia(false);
     }
+  };
+
+  const toggleHijoAusente = (id) => {
+    setHijosAusentesIds(prev => 
+      prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
+    );
   };
 
   const handleVincularHijo = async () => {
@@ -820,7 +851,7 @@ export default function PantallaPadre({ navigation }) {
     );
   };
 
-  const guardarPuntoRecogida = async (coords) => {
+  const guardarPuntoRecogida = async (coords, aplicarATodos = false) => {
     if (!hijoSeleccionado) return;
     setGuardandoPunto(true);
 
@@ -844,6 +875,7 @@ export default function PantallaPadre({ navigation }) {
         parada,
         latitude: coords.latitude,
         longitude: coords.longitude,
+        aplicarATodos // Nuevo parámetro para el backend
       };
 
       const response = await fetch(`${SERVIDOR}/api/padres/hijos/${hijoSeleccionado.id}/punto-recogida`, {
@@ -860,14 +892,20 @@ export default function PantallaPadre({ navigation }) {
       setPuntoRecogidaBloqueado(true);
       setMostrarPickupHint(false);
       setPuntoSugeridoPorDireccion(false);
+      
+      // Persistir que ya se configuró el punto para no mostrar el anuncio de nuevo
+      await AsyncStorage.setItem(`punto_configurado_${usuario?.id}`, 'true');
 
-      // Actualizar el hijo en la lista local
-      setHijos(prev => prev.map(h => h.id === hijoSeleccionado.id ? { ...h, latitude: coords.latitude, longitude: coords.longitude, parada } : h));
+      // Actualizar localmente
+      if (aplicarATodos) {
+        setHijos(prev => prev.map(h => ({ ...h, latitude: coords.latitude, longitude: coords.longitude, parada })));
+      } else {
+        setHijos(prev => prev.map(h => h.id === hijoSeleccionado.id ? { ...h, latitude: coords.latitude, longitude: coords.longitude, parada } : h));
+      }
 
-      Alert.alert('Punto actualizado', 'El conductor usara este punto para marcar el abordaje automatico.');
+      Alert.alert('Punto actualizado', 'El conductor usará este punto para marcar el abordaje automático.');
     } catch (e) {
-      setPuntoRecogida(coords);
-      Alert.alert('Guardado local', 'El punto se actualizo en la app, pero el servidor no confirmo el cambio.');
+      Alert.alert('Error', e.message || 'No se pudo guardar el punto.');
     } finally {
       setGuardandoPunto(false);
     }
@@ -875,37 +913,34 @@ export default function PantallaPadre({ navigation }) {
 
   const seleccionarPuntoRecogida = ({ nativeEvent }) => {
     const coords = nativeEvent.coordinate;
+    
     if (puntoRecogidaBloqueado) {
       solicitarAutorizacionCambio();
       return;
     }
 
-    setPuntoRecogida(coords);
-    setMostrarPickupHint(false);
-    setPuntoSugeridoPorDireccion(false);
-    guardarPuntoRecogida(coords);
-  };
-
-  const confirmarPuntoSugerido = () => {
-    guardarPuntoRecogida(puntoRecogida);
-  };
-
-  const ajustarPuntoSugerido = () => {
-    setPuntoSugeridoPorDireccion(false);
-    setMostrarPickupHint(true);
-    Alert.alert(
-      'Ajustar punto',
-      'Manten presionado el mapa exactamente donde el conductor debe recoger al estudiante.'
-    );
+    if (hijos.length > 1) {
+      Alert.alert(
+        'Definir punto de recogida',
+        '¿Deseas usar esta misma dirección para todos tus hijos?',
+        [
+          { text: 'Solo para este hijo', onPress: () => guardarPuntoRecogida(coords, false) },
+          { text: 'Para todos', onPress: () => guardarPuntoRecogida(coords, true) },
+          { text: 'Cancelar', style: 'cancel' }
+        ]
+      );
+    } else {
+      guardarPuntoRecogida(coords, false);
+    }
   };
 
   const solicitarAutorizacionCambio = () => {
     Alert.alert(
-      'Cambio bloqueado',
-      'El punto de recogida ya fue definido. Para cambiarlo, el conductor debe autorizar el ajuste.',
+      '¿Deseas cambiar el punto de recogida?',
+      'Para modificar el punto de recogida y entrega ya establecido, debes comunicarte con el conductor para coordinar el cambio de ruta de manera segura.\n\n¿Quieres contactar al conductor ahora?',
       [
         { text: 'Cancelar', style: 'cancel' },
-        { text: 'Llamar conductor', onPress: llamarConductor },
+        { text: 'Contactar Conductor', onPress: llamarConductor },
       ]
     );
   };
@@ -932,14 +967,17 @@ export default function PantallaPadre({ navigation }) {
         <Bus size={16} color={THEME.secondary} strokeWidth={2} />;
 
   return (
-    <View style={styles.container}>
-
       {/* HEADER */}
       <View style={styles.header}>
         <View style={styles.headerContent}>
           <View style={{ flex: 1 }}>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-              <Text style={styles.bienvenida}>{hijos.length > 1 ? 'Mis Hijos' : 'Hola'}</Text>
+              <Text style={styles.bienvenida}>{(() => {
+                const hora = new Date().getHours();
+                if (hora >= 5 && hora < 12) return 'Buenos días';
+                if (hora >= 12 && hora < 19) return 'Buenas tardes';
+                return 'Buenas noches';
+              })()}</Text>
               <View style={[styles.socketStatus, { backgroundColor: socketConectado ? THEME.success : THEME.error }]} />
             </View>
             {hijos.length > 0 ? (
@@ -992,7 +1030,18 @@ export default function PantallaPadre({ navigation }) {
         </View>
       </View>
 
-      {/* MAPA */}
+      {/* ETA SUTIL Y ESTÉTICO (PARTE SUPERIOR IZQUIERDA DEL MAPA) */}
+      {rutaActiva && minutosRestantes !== null && (
+        <View style={styles.etaContainer}>
+          <View style={styles.etaContent}>
+            <Clock size={14} color={THEME.secondary} strokeWidth={2.5} />
+            <View>
+              <Text style={styles.etaMinutos}>{minutosRestantes} min</Text>
+              <Text style={styles.etaHora}>Llega {horaEstimadaLlegada}</Text>
+            </View>
+          </View>
+        </View>
+      )}
       <View style={styles.mapaContainer}>
         {hijoSeleccionado && !hijoSeleccionado.rutaId && !cargandoHijos && (
           <View style={styles.childNoRouteOverlay}>
@@ -1229,48 +1278,38 @@ export default function PantallaPadre({ navigation }) {
                   <Text style={styles.infoLabel}>Grado</Text>
                   <Text style={styles.infoValor}>{hijoSeleccionado?.grado}</Text>
                 </View>
+
+                <View style={styles.infoRow}>
+                  <Text style={styles.infoLabel}>Colegio</Text>
+                  <Text style={styles.infoValor}>{hijoSeleccionado?.colegioNombre || 'No especificado'}</Text>
+                </View>
+
                 <View style={styles.infoRow}>
                   <Text style={styles.infoLabel}>Ruta</Text>
                   <Text style={styles.infoValor}>{hijoSeleccionado?.rutaNombre}</Text>
                 </View>
+
                 <View style={styles.infoRow}>
-                  <Text style={styles.infoLabel}>Recogida</Text>
-                  <Text style={styles.infoValor}>
-                    {guardandoPunto
-                      ? 'Guardando...'
-                      : `${puntoRecogida.latitude.toFixed(5)}, ${puntoRecogida.longitude.toFixed(5)}`}
-                  </Text>
+                  <Text style={styles.infoLabel}>Conductor</Text>
+                  <Text style={styles.infoValor}>{hijoSeleccionado?.conductorNombre || 'Pendiente'}</Text>
                 </View>
+
                 <View style={styles.infoRow}>
-                  <Text style={styles.infoLabel}>Cambio de punto</Text>
-                  <Text style={[styles.infoValor, { color: puntoRecogidaBloqueado ? THEME.warning : THEME.success }]}>
-                    {puntoRecogidaBloqueado ? 'Requiere autorizacion del conductor' : 'Disponible'}
-                  </Text>
+                  <Text style={styles.infoLabel}>Recogida (Promedio)</Text>
+                  <Text style={styles.infoValor}>{hijoSeleccionado?.promedioRecogida || '06:45 AM'}</Text>
                 </View>
+
+                <View style={styles.infoRow}>
+                  <Text style={styles.infoLabel}>Llegada (Promedio)</Text>
+                  <Text style={styles.infoValor}>{hijoSeleccionado?.promedioLlegada || '01:30 PM'}</Text>
+                </View>
+
                 <View style={styles.infoRow}>
                   <Text style={styles.infoLabel}>Estado bus</Text>
                   <View style={styles.infoValorRow}>
                     <View style={[styles.estadoDot, { backgroundColor: estadoColor }]} />
                     <Text style={[styles.infoValor, { color: estadoColor }]}>{estadoTexto}</Text>
                   </View>
-                </View>
-                <View style={styles.infoRow}>
-                  <Text style={styles.infoLabel}>Hora estimada</Text>
-                  <Text style={styles.infoValor}>{horaEstimadaLlegada}</Text>
-                </View>
-                <View style={styles.infoRow}>
-                  <Text style={styles.infoLabel}>Aviso de voz</Text>
-                  <TouchableOpacity onPress={() => setVozActivada(!vozActivada)}>
-                    <Text style={[styles.infoValor, { color: vozActivada ? THEME.success : THEME.error }]}>
-                      {vozActivada ? 'Activado' : 'Desactivado'}
-                    </Text>
-                  </TouchableOpacity>
-                </View>
-                <View style={styles.infoRow}>
-                  <Text style={styles.infoLabel}>Abordó hoy</Text>
-                  <Text style={[styles.infoValor, { color: hijoSeleccionado?.abordado ? THEME.success : THEME.textSecondary }]}>
-                    {hijoSeleccionado?.abordado ? 'Sí' : 'No aún'}
-                  </Text>
                 </View>
               </View>
 
@@ -1294,12 +1333,6 @@ export default function PantallaPadre({ navigation }) {
                 <Volume2 size={18} color={THEME.primary} strokeWidth={2} />
                 <Text style={styles.btnProbarVozTexto}>Probar aviso de voz</Text>
               </TouchableOpacity>
-              {puntoRecogidaBloqueado ? (
-                <TouchableOpacity style={styles.btnSolicitarCambio} onPress={solicitarAutorizacionCambio}>
-                  <MapPin size={18} color={THEME.warning} strokeWidth={2} />
-                  <Text style={styles.btnSolicitarCambioTexto}>Solicitar cambio de punto</Text>
-                </TouchableOpacity>
-              ) : null}
             </View>
           )}
 
@@ -1481,46 +1514,79 @@ export default function PantallaPadre({ navigation }) {
       {/* MODAL AUSENCIA */}
       <Modal visible={modalAusencia} transparent animationType="slide">
         <View style={styles.modalOverlay}>
-          <View style={styles.modalCard}>
+          <View style={[styles.modalCard, { maxHeight: '90%' }]}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitulo}>Reportar ausencia</Text>
               <TouchableOpacity onPress={() => setModalAusencia(false)} style={styles.modalCloseBtn}>
                 <X size={24} color={THEME.textSecondary} strokeWidth={2} />
               </TouchableOpacity>
             </View>
-            <Text style={styles.modalSubtitulo}>
-              Informa al conductor que {hijoSeleccionado?.nombre.split(' ')[0]} no asistirá hoy para optimizar la ruta.
-            </Text>
+            <ScrollView showsVerticalScrollIndicator={false}>
+              <Text style={styles.modalSubtitulo}>
+                Selecciona quién no asistirá y por cuánto tiempo. Esto pausará las notificaciones de llegada para estos niños.
+              </Text>
 
-            <Text style={styles.labelField}>Motivo (Opcional)</Text>
-            <TextInput
-              style={styles.input}
-              placeholder="Ej: Se siente mal, viaje familiar..."
-              value={motivoAusencia}
-              onChangeText={setMotivoAusencia}
-              multiline
-            />
+              <Text style={styles.labelField}>¿Quién no asistirá?</Text>
+              <View style={styles.hijosAusenciaGrid}>
+                {hijos.map(h => (
+                  <TouchableOpacity 
+                    key={h.id} 
+                    style={[styles.hijoAusenciaBtn, hijosAusentesIds.includes(h.id) && styles.hijoAusenciaBtnActivo]}
+                    onPress={() => toggleHijoAusente(h.id)}
+                  >
+                    <Users size={16} color={hijosAusentesIds.includes(h.id) ? '#fff' : THEME.textSecondary} />
+                    <Text style={[styles.hijoAusenciaTexto, hijosAusentesIds.includes(h.id) && styles.hijoAusenciaTextoActivo]}>
+                      {h.nombre.split(' ')[0]}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
 
-            <View style={styles.modalBotones}>
-              <TouchableOpacity
-                style={styles.modalBtnCancelar}
-                onPress={() => setModalAusencia(false)}
-                disabled={loadingAusencia}
-              >
-                <Text style={styles.modalBtnCancelarTexto}>Cancelar</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.modalBtnConfirmar, { backgroundColor: THEME.error }]}
-                onPress={reportarAusencia}
-                disabled={loadingAusencia}
-              >
-                {loadingAusencia ? (
-                  <ActivityIndicator color="#fff" size="small" />
-                ) : (
-                  <Text style={styles.modalBtnConfirmarTexto}>Confirmar</Text>
-                )}
-              </TouchableOpacity>
-            </View>
+              <Text style={styles.labelField}>¿Por cuántos días?</Text>
+              <View style={styles.diasSelector}>
+                {[1, 2, 3, 5, 10].map(d => (
+                  <TouchableOpacity 
+                    key={d} 
+                    style={[styles.diaBtn, diasAusencia === d && styles.diaBtnActivo]}
+                    onPress={() => setDiasAusencia(d)}
+                  >
+                    <Text style={[styles.diaBtnTexto, diasAusencia === d && styles.diaBtnTextoActivo]}>
+                      {d === 1 ? 'Solo hoy' : `${d} días`}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <Text style={styles.labelField}>Motivo (Opcional)</Text>
+              <TextInput
+                style={styles.input}
+                placeholder="Ej: Se siente mal, viaje familiar..."
+                value={motivoAusencia}
+                onChangeText={setMotivoAusencia}
+                multiline
+              />
+
+              <View style={styles.modalBotones}>
+                <TouchableOpacity
+                  style={styles.modalBtnCancelar}
+                  onPress={() => setModalAusencia(false)}
+                  disabled={loadingAusencia}
+                >
+                  <Text style={styles.modalBtnCancelarTexto}>Cancelar</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.modalBtnConfirmar, { backgroundColor: THEME.error }]}
+                  onPress={reportarAusencia}
+                  disabled={loadingAusencia}
+                >
+                  {loadingAusencia ? (
+                    <ActivityIndicator color="#fff" size="small" />
+                  ) : (
+                    <Text style={styles.modalBtnConfirmarTexto}>Confirmar</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
           </View>
         </View>
       </Modal>
@@ -1727,6 +1793,41 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(255,255,255,0.15)',
     padding: 10,
     borderRadius: 10,
+  },
+
+  // ETA Sutil
+  etaContainer: {
+    position: 'absolute',
+    top: 100, // Debajo del header
+    left: 14,
+    zIndex: 20,
+  },
+  etaContent: {
+    backgroundColor: 'rgba(255,255,255,0.95)',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: THEME.border,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  etaMinutos: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: THEME.text,
+  },
+  etaHora: {
+    fontSize: 10,
+    color: THEME.textSecondary,
+    fontWeight: '600',
+    marginTop: -2,
   },
 
   // Mapa
@@ -2922,6 +3023,63 @@ const styles = StyleSheet.create({
     color: THEME.textSecondary,
   },
   tipoOptionTextActivo: {
+    color: '#fff',
+  },
+
+  // Modal Ausencia mejorado
+  hijosAusenciaGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 10,
+    marginBottom: 20,
+  },
+  hijoAusenciaBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: THEME.background,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: THEME.border,
+  },
+  hijoAusenciaBtnActivo: {
+    backgroundColor: THEME.primary,
+    borderColor: THEME.primary,
+  },
+  hijoAusenciaTexto: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: THEME.textSecondary,
+  },
+  hijoAusenciaTextoActivo: {
+    color: '#fff',
+  },
+  diasSelector: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 20,
+  },
+  diaBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 10,
+    backgroundColor: THEME.background,
+    borderWidth: 1,
+    borderColor: THEME.border,
+  },
+  diaBtnActivo: {
+    backgroundColor: THEME.secondary,
+    borderColor: THEME.secondary,
+  },
+  diaBtnTexto: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: THEME.textSecondary,
+  },
+  diaBtnTextoActivo: {
     color: '#fff',
   },
 });

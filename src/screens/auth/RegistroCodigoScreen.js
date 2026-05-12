@@ -49,6 +49,7 @@ const normalizarRolRegistro = (valor = '') => {
 const crearHijoVacio = () => ({
   nombre: '',
   grado: '',
+  colegioNombre: '',
   direccion: '',
   codigoConductor: '',
 });
@@ -127,10 +128,11 @@ export default function RegistroCodigoScreen({ navigation, route }) {
       .map((hijo) => ({
         nombre: hijo.nombre.trim(),
         grado: hijo.grado.trim(),
+        colegioNombre: hijo.colegioNombre.trim(),
         direccion: hijo.direccion.trim() || datos.direccion.trim(),
         codigoConductor: hijo.codigoConductor.trim().toUpperCase(),
       }))
-      .filter((hijo) => hijo.nombre || hijo.grado || hijo.direccion || hijo.codigoConductor);
+      .filter((hijo) => hijo.nombre || hijo.grado || hijo.colegioNombre || hijo.direccion || hijo.codigoConductor);
 
   const validarHijosPadre = () => {
     if (destino !== 'padre') return null;
@@ -138,9 +140,9 @@ export default function RegistroCodigoScreen({ navigation, route }) {
     const hijos = obtenerHijosNormalizados();
     if (hijos.length === 0) return null;
 
-    const hijoIncompleto = hijos.find((hijo) => !hijo.nombre || !hijo.grado);
+    const hijoIncompleto = hijos.find((hijo) => !hijo.nombre || !hijo.grado || !hijo.colegioNombre);
     if (hijoIncompleto) {
-      return 'Cada hijo necesita al menos nombre y grado.';
+      return 'Cada hijo necesita nombre, grado y colegio.';
     }
 
     return null;
@@ -225,6 +227,7 @@ export default function RegistroCodigoScreen({ navigation, route }) {
         payloadRegistro.alumnos = hijosNormalizados.map((hijo) => ({
           nombre: hijo.nombre,
           grado: hijo.grado,
+          colegioNombre: hijo.colegioNombre,
           direccion: hijo.direccion,
           parada: hijo.direccion,
           codigoInvitacion: hijo.codigoConductor,
@@ -593,18 +596,26 @@ export default function RegistroCodigoScreen({ navigation, route }) {
                     placeholderTextColor="#555555"
                   />
 
+                  <Text style={styles.labelField}>Grado</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Ej: 3A"
+                    value={hijo.grado}
+                    onChangeText={(valor) => actualizarHijo(indice, 'grado', valor)}
+                    placeholderTextColor="#555555"
+                  />
+
+                  <Text style={styles.labelField}>Nombre del colegio</Text>
+                  <TextInput
+                    style={styles.input}
+                    placeholder="Ej: Colegio San José"
+                    value={hijo.colegioNombre}
+                    onChangeText={(valor) => actualizarHijo(indice, 'colegioNombre', valor)}
+                    placeholderTextColor="#555555"
+                  />
+
                   <View style={styles.rowInputs}>
                     <View style={{ flex: 1, marginRight: 8 }}>
-                      <Text style={styles.labelField}>Grado</Text>
-                      <TextInput
-                        style={styles.input}
-                        placeholder="Ej: 3A"
-                        value={hijo.grado}
-                        onChangeText={(valor) => actualizarHijo(indice, 'grado', valor)}
-                        placeholderTextColor="#555555"
-                      />
-                    </View>
-                    <View style={{ flex: 1, marginLeft: 8 }}>
                       <Text style={styles.labelField}>Codigo conductor (opcional)</Text>
                       <TextInput
                         style={styles.input}

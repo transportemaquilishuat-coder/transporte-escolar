@@ -967,6 +967,7 @@ export default function PantallaPadre({ navigation }) {
         <Bus size={16} color={THEME.secondary} strokeWidth={2} />;
 
   return (
+    <View style={styles.container}>
       {/* HEADER */}
       <View style={styles.header}>
         <View style={styles.headerContent}>

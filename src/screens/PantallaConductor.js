@@ -97,6 +97,10 @@ export default function PantallaConductor({ navigation }) {
   const intervaloRef = useRef(null);
   const abordajesEnProcesoRef = useRef(new Set());
   const [tabActiva, setTabActiva] = useState('control');
+  const [turno, setTurno] = useState(() => {
+    const hora = new Date().getHours();
+    return (hora >= 5 && hora < 12) ? 'mañana' : 'tarde';
+  });
   const [modalAlumnoVisible, setModalAlumnoVisible] = useState(false);
   const [loadingGestion, setLoadingGestion] = useState(false);
   const [mostrarAvisoAusentes, setMostrarAvisoAusentes] = useState(false);
@@ -195,10 +199,15 @@ export default function PantallaConductor({ navigation }) {
     }).start(() => setMostrarAvisoAusentes(false));
   };
 
+  useEffect(() => {
+    if (conductorId) cargarAlumnos();
+  }, [turno]);
+
   // ========== FUNCIONES ==========
   const cargarAlumnos = async () => {
     try {
-      const res = await fetch(`${SERVIDOR}/api/asignaciones/conductor/${conductorId || CONDUCTOR_ID_DEMO}`, {
+      const url = `${SERVIDOR}/api/asignaciones/conductor/${conductorId || CONDUCTOR_ID_DEMO}?turno=${turno}`;
+      const res = await fetch(url, {
         headers: await obtenerAuthHeaders(),
       });
       const datos = await res.json().catch(() => ({}));
@@ -607,6 +616,28 @@ export default function PantallaConductor({ navigation }) {
               <LogOut size={18} color="#fff" strokeWidth={2} />
             </TouchableOpacity>
           </View>
+        </View>
+
+        {/* SELECTOR DE TURNO */}
+        <View style={styles.turnoSelectorContainer}>
+          <TouchableOpacity
+            style={[styles.turnoBtn, turno === 'mañana' && styles.turnoBtnActivo]}
+            onPress={() => setTurno('mañana')}
+          >
+            <Clock size={14} color={turno === 'mañana' ? '#fff' : THEME.textSecondary} strokeWidth={2.5} />
+            <Text style={[styles.turnoBtnTexto, turno === 'mañana' && styles.turnoBtnTextoActivo]}>
+              Mañana
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.turnoBtn, turno === 'tarde' && styles.turnoBtnActivo]}
+            onPress={() => setTurno('tarde')}
+          >
+            <Clock size={14} color={turno === 'tarde' ? '#fff' : THEME.textSecondary} strokeWidth={2.5} />
+            <Text style={[styles.turnoBtnTexto, turno === 'tarde' && styles.turnoBtnTextoActivo]}>
+              Tarde
+            </Text>
+          </TouchableOpacity>
         </View>
 
         {/* TABS COMPACTOS */}
@@ -2222,5 +2253,39 @@ const styles = StyleSheet.create({
     marginTop: 2,
     lineHeight: 16,
     fontWeight: '500',
+  },
+  // Estilos del Selector de Turno
+  turnoSelectorContainer: {
+    flexDirection: 'row',
+    backgroundColor: THEME.surface,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    gap: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: THEME.border,
+  },
+  turnoBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: THEME.background,
+    borderWidth: 1,
+    borderColor: THEME.border,
+  },
+  turnoBtnActivo: {
+    backgroundColor: THEME.secondary,
+    borderColor: THEME.secondary,
+  },
+  turnoBtnTexto: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: THEME.textSecondary,
+  },
+  turnoBtnTextoActivo: {
+    color: '#fff',
   },
 });

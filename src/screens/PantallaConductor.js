@@ -1,5 +1,6 @@
 import { enviarNotificacionLocal } from '../services/notificaciones';
 import socket from '../config/socket';
+import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import { useState, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
@@ -520,31 +521,31 @@ export default function PantallaConductor({ navigation }) {
 
   const desinscribirAlumno = async (alumno) => {
     Alert.alert(
-      'Desinscribir alumno',
-      `¿Estás seguro de que deseas desinscribir a ${alumno.nombre}?\n\nEsta acción no se puede deshacer.`,
+      'Desvincular alumno',
+      `¿Estás seguro de que deseas desvincular a ${alumno.nombre}?\n\nEsta acción eliminará la asignación de este alumno a tu ruta.`,
       [
         {
           text: 'Cancelar',
           style: 'cancel'
         },
         {
-          text: 'Desinscribir',
+          text: 'Desvincular',
           style: 'destructive',
           onPress: async () => {
             setLoadingGestion(true);
             try {
-              const response = await fetch(`${SERVIDOR}/api/admin/alumnos/${alumno.id}`, {
-                method: 'PUT',
+              const response = await fetch(`${SERVIDOR}/api/asignaciones/conductor/${conductorId || CONDUCTOR_ID_DEMO}/alumnos/${alumno.id}`, {
+                method: 'DELETE',
                 headers: { 'Content-Type': 'application/json', ...(await obtenerAuthHeaders()) },
-                body: JSON.stringify({ ...alumno, activo: false }),
               });
 
               if (response.ok) {
-                agregarEvento(`Alumno desinscrito: ${alumno.nombre}`);
+                const datos = await response.json();
+                agregarEvento(`Alumno desvinculado: ${alumno.nombre}`);
                 cargarAlumnos();
-                Alert.alert('Éxito', 'Alumno desinscrito correctamente');
+                Alert.alert('Éxito', datos.mensaje || 'Alumno desvinculado correctamente');
               } else {
-                Alert.alert('Error', 'No se pudo desinscribir el alumno');
+                Alert.alert('Error', 'No se pudo desvincular el alumno');
               }
             } catch (error) {
               console.error('Error:', error);
@@ -577,7 +578,12 @@ export default function PantallaConductor({ navigation }) {
           <View style={styles.headerContent}>
             <View style={styles.headerLeft}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 2 }}>
-                <Text style={styles.bienvenida}>Buenos días</Text>
+                <Text style={styles.bienvenida}>{(() => {
+                  const hora = new Date().getHours();
+                  if (hora >= 5 && hora < 12) return 'Buenos días';
+                  if (hora >= 12 && hora < 19) return 'Buenas tardes';
+                  return 'Buenas noches';
+                })()}</Text>
                 <View style={[styles.socketStatus, { backgroundColor: socketConectado ? THEME.success : THEME.error }]} />
               </View>
               <Text style={styles.nombreConductor}>
@@ -601,25 +607,6 @@ export default function PantallaConductor({ navigation }) {
               <LogOut size={18} color="#fff" strokeWidth={2} />
             </TouchableOpacity>
           </View>
-
-          {/* Banner de Vinculación para Conductor */}
-          {!usuario?.colegio_id && !usuario?.colegioId && (
-            <View style={styles.bannerVinculacion}>
-              <View style={styles.bannerVinculacionContent}>
-                <AlertCircle size={18} color="#fff" />
-                <View style={styles.bannerVinculacionTextContainer}>
-                  <Text style={styles.bannerVinculacionTitulo}>Sin colegio vinculado</Text>
-                  <Text style={styles.bannerVinculacionDesc}>Puedes generar codigos para padres y gestionar tu servicio independiente.</Text>
-                </View>
-              </View>
-              <TouchableOpacity
-                style={styles.bannerVinculacionBtn}
-                onPress={() => navigation.navigate('ConductorPadres')}
-              >
-                <Text style={styles.bannerVinculacionBtnText}>Codigos</Text>
-              </TouchableOpacity>
-            </View>
-          )}
         </View>
 
         {/* TABS COMPACTOS */}
@@ -632,6 +619,15 @@ export default function PantallaConductor({ navigation }) {
               <Activity size={14} color={tabActiva === 'control' ? '#fff' : THEME.textSecondary} strokeWidth={2} />
               <Text style={[styles.tabTexto, tabActiva === 'control' && styles.tabTextoActivo]}>
                 Control
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.tab, tabActiva === 'mapa' && styles.tabActiva]}
+              onPress={() => setTabActiva('mapa')}
+            >
+              <MapPin size={14} color={tabActiva === 'mapa' ? '#fff' : THEME.textSecondary} strokeWidth={2} />
+              <Text style={[styles.tabTexto, tabActiva === 'mapa' && styles.tabTextoActivo]}>
+                Mapa
               </Text>
             </TouchableOpacity>
             <TouchableOpacity
@@ -812,11 +808,19 @@ export default function PantallaConductor({ navigation }) {
                           <Text style={styles.badgeAbordadoTexto}>Abordado</Text>
                         </View>
                       ) : (
-                        <View style={[styles.badgeEsperaAuto, !rutaActiva && styles.btnDeshabilitado]}>
-                          <Clock size={12} color={THEME.warning} strokeWidth={2} />
-                          <Text style={styles.badgeEsperaAutoTexto}>
-                            {alumno.latitude != null && alumno.longitude != null ? 'Automatico' : 'Sin punto GPS'}
-                          </Text>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                          <View style={[styles.badgeEsperaAuto, !rutaActiva && styles.btnDeshabilitado]}>
+                            <Clock size={12} color={THEME.warning} strokeWidth={2} />
+                            <Text style={styles.badgeEsperaAutoTexto}>
+                              {alumno.latitude != null && alumno.longitude != null ? 'Automatico' : 'Manual'}
+                            </Text>
+                          </View>
+                          <TouchableOpacity 
+                            style={styles.btnDesinscribirMini}
+                            onPress={() => desinscribirAlumno(alumno)}
+                          >
+                            <Trash2 size={16} color={THEME.error} strokeWidth={2} />
+                          </TouchableOpacity>
                         </View>
                       )}
                     </View>
@@ -864,6 +868,67 @@ export default function PantallaConductor({ navigation }) {
                   ))}
                 </View>
               )}
+            </View>
+          ) : tabActiva === 'mapa' ? (
+            // ========== TAB DE MAPA DE RECOGIDA ==========
+            <View style={styles.tabContent}>
+              <View style={styles.mapContainer}>
+                <MapView
+                  provider={PROVIDER_GOOGLE}
+                  style={styles.map}
+                  initialRegion={{
+                    latitude: ubicacion?.latitude || 13.68935,
+                    longitude: ubicacion?.longitude || -89.18718,
+                    latitudeDelta: 0.05,
+                    longitudeDelta: 0.05,
+                  }}
+                >
+                  {/* Marcador del Conductor */}
+                  {ubicacion && (
+                    <Marker
+                      coordinate={{ latitude: ubicacion.latitude, longitude: ubicacion.longitude }}
+                      title="Mi ubicación"
+                    >
+                      <View style={styles.markerConductor}>
+                        <Navigation size={18} color="#fff" strokeWidth={2.5} />
+                      </View>
+                    </Marker>
+                  )}
+
+                  {/* Marcadores de Alumnos (Puntos de Recogida) */}
+                  {alumnos.filter(a => a.latitude && a.longitude).map(alumno => (
+                    <Marker
+                      key={alumno.id}
+                      coordinate={{ latitude: alumno.latitude, longitude: alumno.longitude }}
+                      title={alumno.nombre}
+                      description={alumno.parada}
+                    >
+                      <View style={[
+                        styles.markerAlumno,
+                        { backgroundColor: alumno.estado === 'abordado' ? THEME.success : THEME.warning }
+                      ]}>
+                        <Users size={14} color="#fff" strokeWidth={2.5} />
+                      </View>
+                    </Marker>
+                  ))}
+                </MapView>
+                
+                <View style={styles.mapOverlay}>
+                  <Text style={styles.mapOverlayTitulo}>Mapa de Recogida</Text>
+                  <Text style={styles.mapOverlaySub}>Visualiza los puntos de recogida de tus alumnos.</Text>
+                  
+                  <View style={styles.mapLeyenda}>
+                    <View style={styles.leyendaItem}>
+                      <View style={[styles.leyendaPunto, { backgroundColor: THEME.warning }]} />
+                      <Text style={styles.leyendaTexto}>Pendiente</Text>
+                    </View>
+                    <View style={styles.leyendaItem}>
+                      <View style={[styles.leyendaPunto, { backgroundColor: THEME.success }]} />
+                      <Text style={styles.leyendaTexto}>Abordado</Text>
+                    </View>
+                  </View>
+                </View>
+              </View>
             </View>
           ) : (
             // ========== TAB DE GESTIÓN DE ALUMNOS ==========
@@ -1936,6 +2001,92 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: '700',
   },
+  btnDesinscribirMini: {
+    padding: 6,
+    backgroundColor: '#FEF2F2',
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#FEE2E2',
+  },
+  mapContainer: {
+    height: 500,
+    borderRadius: 20,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: THEME.border,
+    backgroundColor: '#fff',
+  },
+  map: {
+    flex: 1,
+  },
+  markerConductor: {
+    backgroundColor: THEME.secondary,
+    padding: 8,
+    borderRadius: 20,
+    borderWidth: 3,
+    borderColor: '#fff',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
+  },
+  markerAlumno: {
+    padding: 6,
+    borderRadius: 20,
+    borderWidth: 2,
+    borderColor: '#fff',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
+    elevation: 5,
+  },
+  mapOverlay: {
+    position: 'absolute',
+    bottom: 16,
+    left: 16,
+    right: 16,
+    backgroundColor: 'rgba(255,255,255,0.95)',
+    padding: 16,
+    borderRadius: 16,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+    elevation: 5,
+  },
+  mapOverlayTitulo: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: THEME.text,
+  },
+  mapOverlaySub: {
+    fontSize: 11,
+    color: THEME.textSecondary,
+    marginTop: 2,
+    fontWeight: '500',
+  },
+  mapLeyenda: {
+    flexDirection: 'row',
+    marginTop: 12,
+    gap: 16,
+  },
+  leyendaItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+  leyendaPunto: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+  },
+  leyendaTexto: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: THEME.text,
+  },
   // Nuevos estilos Gobernanza Flexible
   accionesPrincipales: {
     flexDirection: 'row',
@@ -1959,7 +2110,7 @@ const styles = StyleSheet.create({
   },
   accionCardTexto: {
     color: '#fff',
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: '800',
   },
   bannerVinculacion: {

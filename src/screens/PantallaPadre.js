@@ -22,7 +22,7 @@ import {
   Bus, Home, Phone, Volume2, VolumeX, AlertTriangle, AlertCircle,
   Check, X, MapPin, Clock, User,
   LogOut, Plus, Users, CreditCard,
-  Sun, CloudRain, Wind
+  Sun, CloudRain, Wind, Car
 } from 'lucide-react-native';
 import { cargarSesionPersistida, limpiarSesion, obtenerToken, obtenerUsuario } from '../services/session';
 
@@ -194,6 +194,7 @@ export default function PantallaPadre({ navigation }) {
     cargando: true
   });
 
+  const [interesCarpool, setInteresCarpool] = useState(false);
   const [usuario, setUsuario] = useState(obtenerUsuario());
 
   useEffect(() => {
@@ -1278,6 +1279,7 @@ export default function PantallaPadre({ navigation }) {
             { key: 'calendario', label: 'Cambios', Icon: Clock },
             { key: 'historial', label: 'Historial', Icon: Clock },
             { key: 'llamar', label: 'Llamar', Icon: Phone },
+            { key: 'carpool', label: 'Carpool', Icon: Car },
             { key: 'suscripcion', label: 'Plan', Icon: CreditCard },
           ].map(({ key, label, Icon }) => (
             <TouchableOpacity
@@ -1464,6 +1466,62 @@ export default function PantallaPadre({ navigation }) {
                   </View>
                 ))
               )}
+            </View>
+          )}
+
+          {/* Carpool (Prototipo de interés) */}
+          {seccionSheet === 'carpool' && (
+            <View style={styles.carpoolContainer}>
+              <View style={styles.carpoolHeader}>
+                <Car size={32} color={THEME.secondary} strokeWidth={2.5} />
+                <Text style={styles.carpoolTitle}>Próximamente: Carpool Escolar</Text>
+              </View>
+
+              <Text style={styles.carpoolDesc}>
+                Estamos diseñando una nueva forma de ahorrar y colaborar entre padres.
+              </Text>
+
+              <View style={styles.carpoolFeatureCard}>
+                <View style={styles.featureItem}>
+                  <MapPin size={20} color={THEME.secondary} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.featureTitle}>Radio de 1KM</Text>
+                    <Text style={styles.featureText}>Conéctate con padres que viven muy cerca de ti.</Text>
+                  </View>
+                </View>
+
+                <View style={styles.featureItem}>
+                  <Bus size={20} color={THEME.secondary} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.featureTitle}>Mismo Destino</Text>
+                    <Text style={styles.featureText}>Grupos exclusivos para familias que van al mismo colegio.</Text>
+                  </View>
+                </View>
+
+                <View style={styles.featureItem}>
+                  <Check size={20} color={THEME.secondary} />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.featureTitle}>Sistema Equitativo</Text>
+                    <Text style={styles.featureText}>Algoritmo que garantiza turnos justos para todos los conductores.</Text>
+                  </View>
+                </View>
+              </View>
+
+              <TouchableOpacity
+                style={[styles.btnCarpoolInteres, interesCarpool && styles.btnCarpoolInteresActivo]}
+                onPress={() => {
+                  setInteresCarpool(true);
+                  Alert.alert("¡Gracias!", "Te notificaremos en cuanto esta función esté disponible en tu zona.");
+                }}
+              >
+                <Text style={styles.btnCarpoolInteresTexto}>
+                  {interesCarpool ? "¡Me interesa! (Registrado)" : "Avísenme cuando esté listo"}
+                </Text>
+              </TouchableOpacity>
+              
+              <Text style={styles.carpoolNota}>
+                Esta función está en fase de diseño. Tu interés nos ayuda a priorizar su desarrollo.
+              </Text>
             </View>
           )}
 
@@ -3116,5 +3174,81 @@ const styles = StyleSheet.create({
   },
   diaBtnTextoActivo: {
     color: '#fff',
+  },
+
+  // Carpool Styles
+  carpoolContainer: {
+    paddingVertical: 10,
+  },
+  carpoolHeader: {
+    alignItems: 'center',
+    marginBottom: 20,
+    gap: 12,
+  },
+  carpoolTitle: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: THEME.text,
+    textAlign: 'center',
+  },
+  carpoolDesc: {
+    fontSize: 14,
+    color: THEME.textSecondary,
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: 24,
+    paddingHorizontal: 10,
+  },
+  carpoolFeatureCard: {
+    backgroundColor: THEME.background,
+    borderRadius: 16,
+    padding: 16,
+    gap: 20,
+    borderWidth: 1,
+    borderColor: THEME.border,
+    marginBottom: 24,
+  },
+  featureItem: {
+    flexDirection: 'row',
+    gap: 14,
+    alignItems: 'flex-start',
+  },
+  featureTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: THEME.text,
+    marginBottom: 2,
+  },
+  featureText: {
+    fontSize: 12,
+    color: THEME.textSecondary,
+    lineHeight: 16,
+  },
+  btnCarpoolInteres: {
+    backgroundColor: THEME.secondary,
+    paddingVertical: 16,
+    borderRadius: 14,
+    alignItems: 'center',
+    shadowColor: THEME.secondary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  btnCarpoolInteresActivo: {
+    backgroundColor: THEME.success,
+    shadowColor: THEME.success,
+  },
+  btnCarpoolInteresTexto: {
+    color: '#fff',
+    fontSize: 15,
+    fontWeight: '800',
+  },
+  carpoolNota: {
+    fontSize: 11,
+    color: THEME.textSecondary,
+    textAlign: 'center',
+    marginTop: 16,
+    fontStyle: 'italic',
   },
 });

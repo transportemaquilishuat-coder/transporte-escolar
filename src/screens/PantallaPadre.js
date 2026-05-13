@@ -167,7 +167,7 @@ export default function PantallaPadre({ navigation }) {
       nombre: hijoSeleccionado.nombre,
       grado: hijoSeleccionado.grado,
       colegioNombre: hijoSeleccionado.colegioNombre || '',
-      direccion: hijoSeleccionado.parada || '',
+      direccion: obtenerDireccionFicha(hijoSeleccionado),
     });
     setModalEditarHijo(true);
   };
@@ -177,27 +177,69 @@ export default function PantallaPadre({ navigation }) {
     return texto || respaldo;
   };
 
+  const obtenerDireccionFicha = (alumno = {}) => (
+    String(alumno?.parada || obtenerDireccionTexto(alumno) || '').trim()
+  );
+
+  const tienePuntoRecogida = (alumno = {}) => (
+    Boolean(alumno?.latitude && alumno?.longitude)
+  );
+
+  const direccionEstaBloqueada = (alumno = {}) => (
+    Boolean(obtenerDireccionFicha(alumno) || tienePuntoRecogida(alumno))
+  );
+
+  const esErrorAprobacionRuta = (status, datos = {}) => {
+    const codigo = datos?.codigo || datos?.code || datos?.error;
+    return status === 409 && [
+      'CAMBIO_DIRECCION_REQUIERE_APROBACION',
+      'CAMBIO_PUNTO_RECOGIDA_REQUIERE_APROBACION',
+    ].includes(codigo);
+  };
+
+  const mostrarReglaAprobacionRuta = () => {
+    Alert.alert(
+      'Autorizacion requerida',
+      'Este cambio afecta la ruta escolar. Coordina con el conductor antes de modificar la direccion o el punto de recogida.',
+      [
+        { text: 'Entendido', style: 'cancel' },
+        { text: 'Llamar conductor', onPress: llamarConductor },
+      ]
+    );
+  };
+
   const handleGuardarEdicionHijo = async () => {
     try {
-      const direccionCambio = datosEdicionHijo.direccion !== hijoSeleccionado.parada;
+      const direccionOriginal = obtenerDireccionFicha(hijoSeleccionado);
+      const direccionNueva = String(datosEdicionHijo.direccion || '').trim();
+      const direccionCambio = direccionNueva !== direccionOriginal;
       
-      if (direccionCambio) {
-        Alert.alert(
-          'Autorización requerida',
-          'El cambio de dirección de recogida afecta la ruta. Debes coordinar este cambio directamente con el conductor por seguridad.\n\n¿Quieres llamar al conductor?',
-          [
-            { text: 'Cancelar', style: 'cancel' },
-            { text: 'Llamar Conductor', onPress: llamarConductor }
-          ]
-        );
+      if (direccionEstaBloqueada(hijoSeleccionado) && direccionCambio) {
+        mostrarReglaAprobacionRuta();
         return;
       }
 
       const res = await fetch(`${SERVIDOR}/api/padres/hijos/${hijoSeleccionado.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', ...(await obtenerAuthHeaders()) },
-        body: JSON.stringify(datosEdicionHijo),
+        body: JSON.stringify({
+          ...datosEdicionHijo,
+          direccion: direccionNueva,
+        }),
       });
+
+      const rawBody = await res.text();
+      let datosRespuesta = {};
+      try {
+        datosRespuesta = rawBody ? JSON.parse(rawBody) : {};
+      } catch (_errorParse) {
+        datosRespuesta = { error: rawBody };
+      }
+
+      if (!res.ok && esErrorAprobacionRuta(res.status, datosRespuesta)) {
+        mostrarReglaAprobacionRuta();
+        return;
+      }
 
       if (!res.ok) throw new Error('No se pudo actualizar la información');
 
@@ -957,6 +999,10 @@ export default function PantallaPadre({ navigation }) {
       });
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
+        if (esErrorAprobacionRuta(response.status, errorData)) {
+          mostrarReglaAprobacionRuta();
+          return;
+        }
         throw new Error(errorData.error || 'No se pudo guardar el punto de recogida');
       }
 
@@ -1037,6 +1083,11 @@ export default function PantallaPadre({ navigation }) {
     minutosRestantes === 0 ? <Check size={16} color={THEME.success} strokeWidth={3} /> :
       minutosRestantes <= 3 ? <AlertTriangle size={16} color={THEME.error} strokeWidth={2} /> :
         <Bus size={16} color={THEME.secondary} strokeWidth={2} />;
+
+  const direccionEdicionBloqueada = direccionEstaBloqueada(hijoSeleccionado);
+  const textoDireccionBloqueada = tienePuntoRecogida(hijoSeleccionado)
+    ? 'El punto de recogida ya esta definido. Coordina cualquier cambio con el conductor.'
+    : 'La direccion ya esta registrada. Coordina cualquier cambio con el conductor.';
 
   return (
     <View style={styles.container}>
@@ -1949,11 +2000,32 @@ export default function PantallaPadre({ navigation }) {
 
               <Text style={styles.labelField}>Dirección de recogida</Text>
               <TextInput
-                style={[styles.modalInput, { height: 80, textAlignVertical: 'top' }]}
+                style={[
+                  styles.modalInput,
+                  { height: 80, textAlignVertical: 'top' },
+                  direccionEdicionBloqueada && styles.modalInputBloqueado,
+                ]}
                 value={datosEdicionHijo.direccion}
-                onChangeText={(v) => setDatosEdicionHijo({ ...datosEdicionHijo, direccion: v })}
+                onChangeText={(v) => {
+                  if (!direccionEdicionBloqueada) {
+                    setDatosEdicionHijo({ ...datosEdicionHijo, direccion: v });
+                  }
+                }}
+                editable={!direccionEdicionBloqueada}
+                placeholder={direccionEdicionBloqueada ? '' : 'Ingresa la direccion de recogida'}
+                placeholderTextColor={THEME.textSecondary}
                 multiline
               />
+              {direccionEdicionBloqueada ? (
+                <View style={styles.campoBloqueadoNota}>
+                  <AlertCircle size={15} color={THEME.warning} strokeWidth={2.2} />
+                  <Text style={styles.campoBloqueadoNotaTexto}>{textoDireccionBloqueada}</Text>
+                </View>
+              ) : (
+                <Text style={styles.campoAyudaTexto}>
+                  Puedes registrar esta direccion porque aun no hay punto de recogida guardado.
+                </Text>
+              )}
 
               <View style={styles.modalBotones}>
                 <TouchableOpacity style={styles.modalBtnCancelar} onPress={() => setModalEditarHijo(false)}>
@@ -2983,6 +3055,39 @@ const styles = StyleSheet.create({
     color: THEME.text,
     fontWeight: '600',
     marginBottom: 16,
+  },
+  modalInputBloqueado: {
+    backgroundColor: '#F8FAFC',
+    color: THEME.textSecondary,
+    borderColor: '#E2E8F0',
+  },
+  campoBloqueadoNota: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    backgroundColor: '#FFF7ED',
+    borderWidth: 1,
+    borderColor: '#FED7AA',
+    borderRadius: 12,
+    padding: 10,
+    marginTop: -8,
+    marginBottom: 16,
+  },
+  campoBloqueadoNotaTexto: {
+    flex: 1,
+    color: '#9A3412',
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '600',
+  },
+  campoAyudaTexto: {
+    color: THEME.textSecondary,
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '600',
+    marginTop: -8,
+    marginBottom: 16,
+    marginLeft: 4,
   },
   labelField: {
     fontSize: 12,

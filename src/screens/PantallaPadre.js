@@ -152,6 +152,58 @@ export default function PantallaPadre({ navigation }) {
   const [codigoVinculacion, setCodigoVinculacion] = useState('');
   const [loadingVincular, setLoadingVincular] = useState(false);
 
+  // Edicion de hijo
+  const [modalEditarHijo, setModalEditarHijo] = useState(false);
+  const [datosEdicionHijo, setDatosEdicionHijo] = useState({
+    nombre: '',
+    grado: '',
+    colegioNombre: '',
+    direccion: '',
+  });
+
+  const abrirEdicionHijo = () => {
+    if (!hijoSeleccionado) return;
+    setDatosEdicionHijo({
+      nombre: hijoSeleccionado.nombre,
+      grado: hijoSeleccionado.grado,
+      colegioNombre: hijoSeleccionado.colegioNombre || '',
+      direccion: hijoSeleccionado.parada || '',
+    });
+    setModalEditarHijo(true);
+  };
+
+  const handleGuardarEdicionHijo = async () => {
+    try {
+      const direccionCambio = datosEdicionHijo.direccion !== hijoSeleccionado.parada;
+      
+      if (direccionCambio) {
+        Alert.alert(
+          'Autorización requerida',
+          'El cambio de dirección de recogida afecta la ruta. Debes coordinar este cambio directamente con el conductor por seguridad.\n\n¿Quieres llamar al conductor?',
+          [
+            { text: 'Cancelar', style: 'cancel' },
+            { text: 'Llamar Conductor', onPress: llamarConductor }
+          ]
+        );
+        return;
+      }
+
+      const res = await fetch(`${SERVIDOR}/api/padres/hijos/${hijoSeleccionado.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', ...(await obtenerAuthHeaders()) },
+        body: JSON.stringify(datosEdicionHijo),
+      });
+
+      if (!res.ok) throw new Error('No se pudo actualizar la información');
+
+      setModalEditarHijo(false);
+      Alert.alert('¡Éxito!', 'Información actualizada correctamente.');
+      await cargarHijos();
+    } catch (e) {
+      Alert.alert('Error', e.message);
+    }
+  };
+
   // Voz
   const [vozActivada, setVozActivada] = useState(true);
   const [avisoVozDado, setAvisoVozDado] = useState(false);
@@ -1019,15 +1071,16 @@ export default function PantallaPadre({ navigation }) {
                   ))}
                 </ScrollView>
                 <TouchableOpacity
-                  style={styles.btnAddHijoHeader}
+                  style={styles.btnAddHijoSubtle}
                   onPress={() => setModalVincular(true)}
                 >
-                  <Plus size={18} color="#fff" strokeWidth={3} />
+                  <Plus size={18} color="rgba(255,255,255,0.8)" strokeWidth={2.5} />
                 </TouchableOpacity>
               </View>
             ) : (
-              <TouchableOpacity onPress={() => setModalVincular(true)}>
-                <Text style={styles.titulo}>{cargandoHijos ? 'Cargando...' : '+ Vincular hijo'}</Text>
+              <TouchableOpacity style={styles.btnVincularHeaderLarge} onPress={() => setModalVincular(true)}>
+                <Plus size={18} color="#fff" strokeWidth={3} />
+                <Text style={styles.titulo}>Vincular primer hijo</Text>
               </TouchableOpacity>
             )}
 
@@ -1308,7 +1361,12 @@ export default function PantallaPadre({ navigation }) {
               <View style={styles.infoSection}>
                 <View style={styles.infoRow}>
                   <Text style={styles.infoLabel}>Alumno</Text>
-                  <Text style={styles.infoValor}>{hijoSeleccionado?.nombre}</Text>
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+                    <Text style={styles.infoValor}>{hijoSeleccionado?.nombre}</Text>
+                    <TouchableOpacity onPress={abrirEdicionHijo} style={styles.btnEditarHijo}>
+                      <User size={14} color={THEME.secondary} />
+                    </TouchableOpacity>
+                  </View>
                 </View>
 
                 <View style={styles.infoRow}>
@@ -1834,6 +1892,62 @@ export default function PantallaPadre({ navigation }) {
         </View>
       </Modal>
 
+      {/* MODAL EDITAR HIJO */}
+      <Modal visible={modalEditarHijo} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={[styles.modalCard, { maxHeight: '90%' }]}>
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitulo}>Editar Estudiante</Text>
+              <TouchableOpacity onPress={() => setModalEditarHijo(false)} style={styles.modalCloseBtn}>
+                <X size={24} color={THEME.textSecondary} strokeWidth={2} />
+              </TouchableOpacity>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false}>
+              <Text style={styles.labelField}>Nombre completo</Text>
+              <TextInput
+                style={styles.modalInput}
+                value={datosEdicionHijo.nombre}
+                onChangeText={(v) => setDatosEdicionHijo({ ...datosEdicionHijo, nombre: v })}
+              />
+
+              <Text style={styles.labelField}>Grado</Text>
+              <TextInput
+                style={styles.modalInput}
+                value={datosEdicionHijo.grado}
+                onChangeText={(v) => setDatosEdicionHijo({ ...datosEdicionHijo, grado: v })}
+              />
+
+              <Text style={styles.labelField}>Colegio</Text>
+              <TextInput
+                style={styles.modalInput}
+                value={datosEdicionHijo.colegioNombre}
+                onChangeText={(v) => setDatosEdicionHijo({ ...datosEdicionHijo, colegioNombre: v })}
+              />
+
+              <Text style={styles.labelField}>Dirección de recogida</Text>
+              <TextInput
+                style={[styles.modalInput, { height: 80, textAlignVertical: 'top' }]}
+                value={datosEdicionHijo.direccion}
+                onChangeText={(v) => setDatosEdicionHijo({ ...datosEdicionHijo, direccion: v })}
+                multiline
+              />
+
+              <View style={styles.modalBotones}>
+                <TouchableOpacity style={styles.modalBtnCancelar} onPress={() => setModalEditarHijo(false)}>
+                  <Text style={styles.modalBtnCancelarTexto}>Cancelar</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.modalBtnConfirmar, { backgroundColor: THEME.secondary }]}
+                  onPress={handleGuardarEdicionHijo}
+                >
+                  <Text style={styles.modalBtnConfirmarTexto}>Guardar</Text>
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
@@ -2755,15 +2869,22 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '800',
   },
-  btnAddHijoHeader: {
+  btnAddHijoSubtle: {
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: 'rgba(255,255,255,0.2)',
+    backgroundColor: 'rgba(255,255,255,0.15)',
     justifyContent: 'center',
     alignItems: 'center',
-    marginLeft: 12,
-    marginTop: 8,
+    marginLeft: 10,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
+  },
+  btnVincularHeaderLarge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 8,
   },
   modalInput: {
     backgroundColor: THEME.background,

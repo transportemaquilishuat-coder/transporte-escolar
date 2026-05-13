@@ -1015,24 +1015,18 @@ export default function PantallaConductor({ navigation }) {
                 </View>
               </View>
 
-              {/* ACCIONES PRINCIPALES */}
+              {/* ACCIONES PRINCIPALES - LIMPIAS Y SIN REDUNDANCIA */}
               <View style={styles.accionesPrincipales}>
                 <TouchableOpacity 
-                  style={[styles.accionCard, { backgroundColor: THEME.secondary }]} 
+                  style={[styles.accionCard, { backgroundColor: THEME.secondary, flex: 1 }]} 
                   onPress={() => navigation.navigate('ConductorPadres')}
                 >
-                  <KeyRound size={20} color="#fff" strokeWidth={2.5} />
-                  <Text style={styles.accionCardTexto}>Generar Códigos</Text>
+                  <Users size={20} color="#fff" strokeWidth={2.5} />
+                  <Text style={styles.accionCardTexto}>Vinculaciones</Text>
                 </TouchableOpacity>
+
                 <TouchableOpacity 
-                  style={[styles.accionCard, { backgroundColor: THEME.primary }]} 
-                  onPress={() => setModalAlumnoVisible(true)}
-                >
-                  <Plus size={20} color="#fff" strokeWidth={2.5} />
-                  <Text style={styles.accionCardTexto}>Nuevo Alumno</Text>
-                </TouchableOpacity>
-                <TouchableOpacity 
-                  style={[styles.accionCard, { backgroundColor: THEME.info }]} 
+                  style={[styles.accionCard, { backgroundColor: THEME.info, flex: 1 }]} 
                   onPress={() => setModalColegioVisible(true)}
                 >
                   <Navigation size={20} color="#fff" strokeWidth={2.5} />

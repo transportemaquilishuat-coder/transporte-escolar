@@ -9,8 +9,9 @@ import {
   StyleSheet,
   Modal,
   TextInput,
+  Share,
 } from 'react-native';
-import { HeartHandshake, KeyRound, Plus, UsersRound } from 'lucide-react-native';
+import { HeartHandshake, KeyRound, Plus, QrCode, X, Copy, Share2 } from 'lucide-react-native';
 import { useConductorVinculacion } from '../../hooks/useConductorVinculacion';
 import { useBranding } from '../../hooks/useBranding';
 import { KIDGO_THEME } from '../../theme/kidgoTheme';

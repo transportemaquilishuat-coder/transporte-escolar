@@ -625,13 +625,16 @@ export default function PantallaPadre({ navigation }) {
     try {
       const data = await fetchWithAuth('/padres/mis-hijos');
       const listaHijos = data.hijos || [];
-      setHijos(listaHijos);
+      
+      // Asegurar que no haya duplicados por ID (Gobernanza de datos)
+      const hijosUnicos = Array.from(new Map(listaHijos.map(h => [h.id, h])).values());
+      setHijos(hijosUnicos);
 
-      if (listaHijos.length > 0) {
+      if (hijosUnicos.length > 0) {
         setHijoSeleccionadoId((idActual) => (
-          listaHijos.some(hijo => hijo.id === idActual) ? idActual : listaHijos[0].id
+          hijosUnicos.some(hijo => hijo.id === idActual) ? idActual : hijosUnicos[0].id
         ));
-        const rutasIds = [...new Set(listaHijos.map(h => h.rutaId).filter(Boolean))];
+        const rutasIds = [...new Set(hijosUnicos.map(h => h.rutaId).filter(Boolean))];
         socket.emit('padre:unirse_rutas', rutasIds);
       } else {
         setHijoSeleccionadoId(null);

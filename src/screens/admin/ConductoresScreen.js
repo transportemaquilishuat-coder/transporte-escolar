@@ -43,7 +43,10 @@ export default function AdminConductoresScreen() {
   const cargarConductores = async () => {
     try {
       const data = await listarConductores();
-      setConductores(data.conductores || []);
+      const listaConductores = data.conductores || [];
+      // Asegurar que no haya duplicados por ID
+      const conductoresUnicos = Array.from(new Map(listaConductores.map(c => [c.id, c])).values());
+      setConductores(conductoresUnicos);
     } catch (err) {
       Alert.alert('Error', err.message);
     }

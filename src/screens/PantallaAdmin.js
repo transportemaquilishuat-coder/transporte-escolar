@@ -152,9 +152,15 @@ export default function PantallaAdmin({ navigation }) {
                 fetch(`${SERVIDOR}/api/admin/configuracion`, { headers: authHeaders }).then(r => r.json()),
             ]);
             setDashboard(dash);
-            setRutas(rut.rutas || []);
-            setAlumnos(alum.alumnos || []);
-            setConductores(cond.conductores || []);
+            
+            // Asegurar que no haya duplicados por ID
+            const rutasUnicas = Array.from(new Map((rut.rutas || []).map(r => [r.id, r])).values());
+            const alumnosUnicos = Array.from(new Map((alum.alumnos || []).map(a => [a.id, a])).values());
+            const conductoresUnicos = Array.from(new Map((cond.conductores || []).map(c => [c.id, c])).values());
+
+            setRutas(rutasUnicas);
+            setAlumnos(alumnosUnicos);
+            setConductores(conductoresUnicos);
             setConfiguracion(config.configuracion || []);
         } catch (e) {
             console.log('Error:', e);

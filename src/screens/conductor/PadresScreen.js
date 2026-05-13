@@ -11,7 +11,7 @@ import {
   TextInput,
   Share,
 } from 'react-native';
-import { HeartHandshake, KeyRound, Plus, QrCode, X, Copy, Share2 } from 'lucide-react-native';
+import { HeartHandshake, KeyRound, Plus, QrCode, X, Copy, Share2, UsersRound } from 'lucide-react-native';
 import { useConductorVinculacion } from '../../hooks/useConductorVinculacion';
 import { useBranding } from '../../hooks/useBranding';
 import { KIDGO_THEME } from '../../theme/kidgoTheme';
@@ -44,7 +44,10 @@ export default function ConductorPadresScreen() {
   const cargarPadres = async () => {
     try {
       const data = await listarPadres();
-      setPadres(data.padres || []);
+      const listaPadres = data.padres || [];
+      // Asegurar que no haya duplicados por ID
+      const padresUnicos = Array.from(new Map(listaPadres.map(p => [p.id, p])).values());
+      setPadres(padresUnicos);
     } catch (err) {
       Alert.alert('Error', err.message);
     }

@@ -12,7 +12,7 @@ import { useKeepAwake } from 'expo-keep-awake';
 import {
   Play, Square, MapPin, Users, GraduationCap,
   Clock, AlertCircle, Check, X, Plus, Trash2,
-  LogOut, Activity, Navigation, KeyRound
+  LogOut, Activity, Navigation, KeyRound, UsersRound
 } from 'lucide-react-native';
 import { useBranding } from '../hooks/useBranding';
 import { cargarSesionPersistida, limpiarSesion, obtenerToken, obtenerUsuario } from '../services/session';
@@ -264,7 +264,10 @@ export default function PantallaConductor({ navigation }) {
         throw new Error(mensaje);
       }
 
-      const alumnosNormalizados = alumnosRespuesta
+      // Asegurar que no haya duplicados por ID (Gobernanza de datos)
+      const alumnosUnicos = Array.from(new Map(alumnosRespuesta.map(a => [a.id, a])).values());
+
+      const alumnosNormalizados = alumnosUnicos
         .map((alumno) => ({
           ...alumno,
           latitude: alumno.latitude != null ? Number(alumno.latitude) : null,

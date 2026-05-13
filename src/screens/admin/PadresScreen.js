@@ -40,7 +40,10 @@ export default function AdminPadresScreen() {
   const cargarPadres = async () => {
     try {
       const data = await listarPadres();
-      setPadres(data.padres || []);
+      const listaPadres = data.padres || [];
+      // Asegurar que no haya duplicados por ID
+      const padresUnicos = Array.from(new Map(listaPadres.map(p => [p.id, p])).values());
+      setPadres(padresUnicos);
     } catch (err) {
       Alert.alert('Error', err.message);
     }

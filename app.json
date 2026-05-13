@@ -38,6 +38,7 @@
     "android": {
       "package": "com.daniel7901.transporteescolar",
       "versionCode": 1,
+      "showPerformanceRPC": false,
       "blockedPermissions": [
         "android.permission.RECORD_AUDIO"
       ],

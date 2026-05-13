@@ -227,13 +227,7 @@ export default function PantallaPadre({ navigation }) {
   });
 
   // Historial
-  const [historialViajes, setHistorialViajes] = useState([
-    { fecha: 'Hoy', hora: '06:45', estado: 'Completado', alumnos: 5 },
-    { fecha: 'Ayer', hora: '06:47', estado: 'Completado', alumnos: 5 },
-    { fecha: 'Lun 12', hora: '06:50', estado: 'Completado', alumnos: 4 },
-    { fecha: 'Vie 09', hora: '06:43', estado: 'Completado', alumnos: 5 },
-    { fecha: 'Jue 08', hora: '06:55', estado: 'Retraso', alumnos: 5 },
-  ]);
+  const [historialViajes, setHistorialViajes] = useState([]);
 
   const hijoSeleccionado = hijos.find(h => h.id === hijoSeleccionadoId) || hijos[0];
 

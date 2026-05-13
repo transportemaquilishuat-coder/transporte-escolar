@@ -93,6 +93,23 @@ export default function ConductorPadresScreen() {
     ]);
   };
 
+  const handleCompartirCodigo = async () => {
+    if (!codigoGenerado?.codigo) return;
+    
+    try {
+      const mensaje = `Hola, este es tu código de vinculación para KidsGo!: ${codigoGenerado.codigo}\n\nUsa este código en la aplicación para registrarte y vincularte conmigo como tu transportista escolar.`;
+      
+      await Share.share({
+        message: mensaje,
+        title: 'Código de vinculación KidsGo!',
+      });
+      
+      setModalCodigo(false);
+    } catch (error) {
+      console.log('Error compartiendo:', error);
+    }
+  };
+
   const renderPadre = ({ item }) => (
     <View style={styles.card}>
       <View style={styles.cardHeader}>
@@ -155,7 +172,7 @@ export default function ConductorPadresScreen() {
             <Text style={styles.codigoInfo}>
               Expira: {codigoGenerado?.expira_en ? new Date(codigoGenerado.expira_en).toLocaleDateString() : 'No disponible'}
             </Text>
-            <TouchableOpacity style={[styles.btnCerrar, { backgroundColor: brandColor }]} onPress={() => setModalCodigo(false)}>
+            <TouchableOpacity style={[styles.btnCerrar, { backgroundColor: brandColor }]} onPress={handleCompartirCodigo}>
               <Text style={styles.btnText}>Compartir y cerrar</Text>
             </TouchableOpacity>
           </View>

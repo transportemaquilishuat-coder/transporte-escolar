@@ -151,6 +151,12 @@ export default function PantallaPadre({ navigation }) {
   const [modalVincular, setModalVincular] = useState(false);
   const [codigoVinculacion, setCodigoVinculacion] = useState('');
   const [loadingVincular, setLoadingVincular] = useState(false);
+  const [mostrarFormAlumno, setMostrarFormAlumno] = useState(false);
+  const [datosNuevoAlumno, setDatosNuevoAlumno] = useState({
+    nombre: '',
+    grado: '',
+    turno_estudio: 'matutino',
+  });
 
   // Edicion de hijo
   const [modalEditarHijo, setModalEditarHijo] = useState(false);
@@ -851,23 +857,52 @@ export default function PantallaPadre({ navigation }) {
       return;
     }
 
+    // Si el usuario decide llenar el formulario, validamos datos del alumno
+    if (mostrarFormAlumno && !datosNuevoAlumno.nombre.trim()) {
+      Alert.alert('Error', 'Ingresa el nombre del estudiante.');
+      return;
+    }
+
     setLoadingVincular(true);
     try {
+      const payload = { 
+        codigo: codigoVinculacion.trim().toUpperCase(),
+        ...(mostrarFormAlumno ? { 
+          alumno: {
+            nombre: datosNuevoAlumno.nombre,
+            grado: datosNuevoAlumno.grado,
+            turno_estudio: datosNuevoAlumno.turno_estudio,
+            turnoEstudio: datosNuevoAlumno.turno_estudio,
+          }
+        } : {})
+      };
+
       const res = await fetch(`${SERVIDOR}/api/vinculaciones/vincular-con-codigo`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...(await obtenerAuthHeaders()) },
-        body: JSON.stringify({ codigo: codigoVinculacion.trim().toUpperCase() }),
+        body: JSON.stringify(payload),
       });
 
       const datos = await res.json();
+
+      // Si el backend indica que falta info del alumno, abrimos el formulario
+      if (res.status === 400 && (datos.error?.includes('informacion') || datos.infoMissing)) {
+        setMostrarFormAlumno(true);
+        Alert.alert('Datos requeridos', 'El conductor solicita los datos del estudiante para completar la vinculación. Por favor llena el formulario.');
+        setLoadingVincular(false);
+        return;
+      }
+
       if (!res.ok) throw new Error(datos.error || 'No se pudo completar la vinculación');
 
       setModalVincular(false);
       setCodigoVinculacion('');
+      setMostrarFormAlumno(false);
+      setDatosNuevoAlumno({ nombre: '', grado: '', turno_estudio: 'matutino' });
 
       Alert.alert(
         '¡Listo!',
-        `Tus hijos han sido vinculados correctamente. ${datos.desc || ''}`,
+        `Vinculación exitosa. ${datos.desc || ''}`,
         [
           {
             text: 'Configurar recogida',
@@ -1024,7 +1059,10 @@ export default function PantallaPadre({ navigation }) {
         setHijos(prev => prev.map(h => h.id === hijoSeleccionado.id ? { ...h, latitude: coords.latitude, longitude: coords.longitude, parada } : h));
       }
 
-      Alert.alert('Punto actualizado', 'El conductor usará este punto para marcar el abordaje automático.');
+      Alert.alert(
+        '¡Listo!', 
+        'El punto de recogida y entrega ha sido establecido. Cualquier cambio futuro deberá ser autorizado por el conductor.'
+      );
     } catch (e) {
       Alert.alert('Error', e.message || 'No se pudo guardar el punto.');
     } finally {
@@ -1171,6 +1209,27 @@ export default function PantallaPadre({ navigation }) {
         </View>
       )}
       <View style={styles.mapaContainer}>
+        {/* BANNER FLOTANTE +VINCULAR HIJO (Solicitado por el usuario) */}
+        <TouchableOpacity 
+          style={styles.bannerVinculacion} 
+          onPress={() => {
+            setMostrarFormAlumno(hijos.length === 0); // Si no tiene hijos, mostrar form por defecto
+            setModalVincular(true);
+          }}
+          activeOpacity={0.9}
+        >
+          <View style={styles.bannerVinculacionContent}>
+            <Plus size={18} color="#fff" strokeWidth={3} />
+            <View style={styles.bannerVinculacionTextContainer}>
+              <Text style={styles.bannerVinculacionTitulo}>+ Vincular a tu hijo</Text>
+              <Text style={styles.bannerVinculacionDesc}>Usa el código del conductor</Text>
+            </View>
+          </View>
+          <View style={styles.bannerVinculacionBtn}>
+            <Text style={styles.bannerVinculacionBtnText}>Vincular</Text>
+          </View>
+        </TouchableOpacity>
+
         {hijoSeleccionado && !hijoSeleccionado.rutaId && !cargandoHijos && (
           <View style={styles.childNoRouteOverlay}>
             <View style={styles.childNoRouteIcon}>
@@ -1831,7 +1890,7 @@ export default function PantallaPadre({ navigation }) {
 
             <ScrollView showsVerticalScrollIndicator={false}>
               <Text style={styles.modalSubtitulo}>
-                Ingresa el código que te proporcionó el conductor o el colegio.
+                Ingresa el código que te proporcionó el conductor o el colegio para vincular a tu hijo.
               </Text>
 
               <Text style={styles.labelField}>Código de vinculación</Text>
@@ -1842,6 +1901,51 @@ export default function PantallaPadre({ navigation }) {
                 onChangeText={setCodigoVinculacion}
                 autoCapitalize="characters"
               />
+
+              {/* OPCIÓN PARA AGREGAR DATOS DEL ALUMNO SI ES NUEVO */}
+              <TouchableOpacity 
+                style={styles.btnToggleForm} 
+                onPress={() => setMostrarFormAlumno(!mostrarFormAlumno)}
+              >
+                <Text style={styles.btnToggleFormTexto}>
+                  {mostrarFormAlumno ? "- Ocultar datos del estudiante" : "+ Agregar datos del estudiante (Si es nuevo)"}
+                </Text>
+              </TouchableOpacity>
+
+              {mostrarFormAlumno && (
+                <Animated.View style={styles.formAlumnoContainer}>
+                  <Text style={styles.labelField}>Nombre completo del hijo</Text>
+                  <TextInput
+                    style={styles.modalInput}
+                    placeholder="Nombre y Apellido"
+                    value={datosNuevoAlumno.nombre}
+                    onChangeText={(v) => setDatosNuevoAlumno({...datosNuevoAlumno, nombre: v})}
+                  />
+
+                  <Text style={styles.labelField}>Grado / Año</Text>
+                  <TextInput
+                    style={styles.modalInput}
+                    placeholder="Ej: 3er Grado A"
+                    value={datosNuevoAlumno.grado}
+                    onChangeText={(v) => setDatosNuevoAlumno({...datosNuevoAlumno, grado: v})}
+                  />
+
+                  <Text style={styles.labelField}>Turno de estudio</Text>
+                  <View style={styles.tipoSelector}>
+                    {['matutino', 'vespertino'].map((t) => (
+                      <TouchableOpacity
+                        key={t}
+                        style={[styles.tipoOption, datosNuevoAlumno.turno_estudio === t && styles.tipoOptionActiva]}
+                        onPress={() => setDatosNuevoAlumno({ ...datosNuevoAlumno, turno_estudio: t })}
+                      >
+                        <Text style={[styles.tipoOptionText, datosNuevoAlumno.turno_estudio === t && styles.tipoOptionTextActivo]}>
+                          {t.charAt(0).toUpperCase() + t.slice(1)}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </Animated.View>
+              )}
 
               <View style={styles.modalBotones}>
                 <TouchableOpacity
@@ -3099,6 +3203,25 @@ const styles = StyleSheet.create({
     marginBottom: 6,
     marginLeft: 4,
     textTransform: 'uppercase',
+  },
+  // Estilos Formulario Alumno en Modal
+  btnToggleForm: {
+    paddingVertical: 10,
+    marginBottom: 10,
+  },
+  btnToggleFormTexto: {
+    fontSize: 14,
+    color: THEME.secondary,
+    fontWeight: '700',
+    textAlign: 'center',
+  },
+  formAlumnoContainer: {
+    backgroundColor: 'rgba(0,122,255,0.03)',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(0,122,255,0.1)',
   },
   // Nuevos estilos Gobernanza Flexible
   bannerVinculacion: {

@@ -49,6 +49,7 @@
     },
     "ios": {
       "bundleIdentifier": "com.daniel7901.transporteescolar",
+      "showPerformanceRPC": false,
       "config": {
         "googleMapsApiKey": "AIzaSyDVaVcUL_e_lO0nD29QUfOfl0u3RUUFEdM"
       }

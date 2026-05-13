@@ -79,7 +79,7 @@ const obtenerETADeGoogle = async (origen, destino) => {
 };
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
-const SHEET_MIN = 180;
+const SHEET_MIN = 150;
 const SHEET_MAX = SCREEN_HEIGHT * 0.75;
 
 const obtenerAuthHeaders = async () => {

@@ -7,6 +7,7 @@ import {
   Easing,
   Image,
   KeyboardAvoidingView,
+  NativeModules,
   Platform,
   ScrollView,
   StyleSheet,
@@ -53,6 +54,18 @@ import { KIDGO_THEME } from './src/theme/kidgoTheme';
 import { useBranding } from './src/hooks/useBranding';
 
 const Stack = createNativeStackNavigator();
+
+const ocultarMonitorRendimiento = () => {
+  if (!__DEV__ || Platform.OS === 'web') return;
+
+  try {
+    const devSettings = NativeModules?.DevSettings
+      || require('react-native/Libraries/NativeModules/specs/NativeDevSettings').default;
+    devSettings?.setProfilingEnabled?.(false);
+  } catch (error) {
+    console.log('No se pudo ocultar el monitor de rendimiento:', error?.message || error);
+  }
+};
 
 const esRolSuperAdmin = (rol = '') => (
   ['superadmin', 'super_admin', 'super-administrador', 'super_administrador'].includes(String(rol).toLowerCase())
@@ -279,8 +292,8 @@ function LoginScreen({ navigation }) {
 
       <KeyboardAvoidingView
         style={styles.keyboard}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'padding'}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={0}
       >
         <ScrollView
           style={styles.scroll}
@@ -381,6 +394,10 @@ function LoginScreen({ navigation }) {
                   onChangeText={(t) => setEmail(t)}
                   keyboardType="email-address"
                   autoCapitalize="none"
+                  autoCorrect={false}
+                  editable={!loading}
+                  textContentType="username"
+                  autoComplete="email"
                 />
               </View>
 
@@ -393,6 +410,9 @@ function LoginScreen({ navigation }) {
                   value={password}
                   onChangeText={(t) => setPassword(t)}
                   secureTextEntry
+                  editable={!loading}
+                  textContentType="password"
+                  autoComplete="password"
                 />
               </View>
 
@@ -446,6 +466,8 @@ export default function App() {
   const [pantallaInicial, setPantallaInicial] = useState(null);
 
   useEffect(() => {
+    ocultarMonitorRendimiento();
+
     let activo = true;
 
     const hidratarSesion = async () => {

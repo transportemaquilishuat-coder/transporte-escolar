@@ -52,7 +52,13 @@ const crearHijoVacio = () => ({
   colegioNombre: '',
   direccion: '',
   codigoConductor: '',
+  turno_estudio: 'matutino',
 });
+
+const OPCIONES_TURNO_ESTUDIO = [
+  { key: 'matutino', label: 'Matutino' },
+  { key: 'vespertino', label: 'Vespertino' },
+];
 
 export default function RegistroCodigoScreen({ navigation, route }) {
   const { loading, error, registrar } = useRegistroCodigo();
@@ -126,6 +132,7 @@ export default function RegistroCodigoScreen({ navigation, route }) {
         colegioNombre: hijo.colegioNombre.trim(),
         direccion: hijo.direccion.trim() || datos.direccion.trim(),
         codigoConductor: hijo.codigoConductor.trim().toUpperCase(),
+        turno_estudio: hijo.turno_estudio || 'matutino',
       }))
       .filter((hijo) => hijo.nombre || hijo.grado || hijo.colegioNombre || hijo.direccion || hijo.codigoConductor);
 
@@ -201,6 +208,8 @@ export default function RegistroCodigoScreen({ navigation, route }) {
           parada: hijo.direccion,
           codigoInvitacion: hijo.codigoConductor,
           codigoConductor: hijo.codigoConductor,
+          turno_estudio: hijo.turno_estudio,
+          turnoEstudio: hijo.turno_estudio,
         }));
       }
 
@@ -225,6 +234,8 @@ export default function RegistroCodigoScreen({ navigation, route }) {
               grado: hijo.grado,
               direccion: hijo.direccion,
               parada: hijo.direccion,
+              turno_estudio: hijo.turno_estudio,
+              turnoEstudio: hijo.turno_estudio,
             },
           });
         }
@@ -285,6 +296,8 @@ export default function RegistroCodigoScreen({ navigation, route }) {
             grado: hijo.grado,
             direccion: hijo.direccion,
             parada: hijo.direccion,
+            turno_estudio: hijo.turno_estudio,
+            turnoEstudio: hijo.turno_estudio,
           },
         } : {});
       }
@@ -495,6 +508,27 @@ export default function RegistroCodigoScreen({ navigation, route }) {
                     placeholderTextColor="#555555"
                   />
 
+                  <Text style={styles.labelField}>Turno de estudio</Text>
+                  <View style={styles.turnoSelector}>
+                    {OPCIONES_TURNO_ESTUDIO.map((opcion) => (
+                      <TouchableOpacity
+                        key={opcion.key}
+                        style={[
+                          styles.turnoOpcion,
+                          hijo.turno_estudio === opcion.key && { backgroundColor: brandColor, borderColor: brandColor },
+                        ]}
+                        onPress={() => actualizarHijo(indice, 'turno_estudio', opcion.key)}
+                      >
+                        <Text style={[
+                          styles.turnoOpcionTexto,
+                          hijo.turno_estudio === opcion.key && styles.turnoOpcionTextoActivo,
+                        ]}>
+                          {opcion.label}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+
                   <View style={styles.rowInputs}>
                     <View style={{ flex: 1, marginRight: 8 }}>
                       <Text style={styles.labelField}>Codigo conductor (opcional)</Text>
@@ -704,6 +738,30 @@ const styles = StyleSheet.create({
   },
   rowInputs: {
     flexDirection: 'row',
+  },
+  turnoSelector: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 14,
+  },
+  turnoOpcion: {
+    flex: 1,
+    minHeight: 44,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#303030',
+    backgroundColor: '#111111',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 10,
+  },
+  turnoOpcionTexto: {
+    color: '#B0B0B0',
+    fontSize: 13,
+    fontWeight: '900',
+  },
+  turnoOpcionTextoActivo: {
+    color: '#fff',
   },
   hijosHeader: {
     flexDirection: 'row',

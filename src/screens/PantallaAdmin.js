@@ -74,6 +74,7 @@ export default function PantallaAdmin({ navigation }) {
     const [formGrado, setFormGrado] = useState('');
     const [formParada, setFormParada] = useState('');
     const [formRutaId, setFormRutaId] = useState('1');
+    const [formTurnoEstudio, setFormTurnoEstudio] = useState('matutino');
     const [loadingForm, setLoadingForm] = useState(false);
 
     // Modal conductor en mapa
@@ -275,7 +276,7 @@ export default function PantallaAdmin({ navigation }) {
     // ── Alumnos CRUD ─────────────────────────────────────────
     const abrirModalNuevo = () => {
         setAlumnoEditando(null);
-        setFormNombre(''); setFormGrado(''); setFormParada(''); setFormRutaId('1');
+        setFormNombre(''); setFormGrado(''); setFormParada(''); setFormRutaId('1'); setFormTurnoEstudio('matutino');
         setModalAlumno(true);
     };
 
@@ -285,6 +286,7 @@ export default function PantallaAdmin({ navigation }) {
         setFormGrado(alumno.grado || '');
         setFormParada(alumno.parada || '');
         setFormRutaId(alumno.ruta_id?.toString() || '1');
+        setFormTurnoEstudio(alumno.turno_estudio || alumno.turnoEstudio || 'matutino');
         setModalAlumno(true);
     };
 
@@ -296,14 +298,14 @@ export default function PantallaAdmin({ navigation }) {
                 await fetch(`${SERVIDOR}/api/admin/alumnos/${alumnoEditando.id}`, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json', ...(await obtenerAuthHeaders()) },
-                    body: JSON.stringify({ nombre: formNombre, grado: formGrado, parada: formParada, ruta_id: parseInt(formRutaId), orden: alumnoEditando.orden, activo: true }),
+                    body: JSON.stringify({ nombre: formNombre, grado: formGrado, parada: formParada, ruta_id: parseInt(formRutaId), turno_estudio: formTurnoEstudio, turnoEstudio: formTurnoEstudio, orden: alumnoEditando.orden, activo: true }),
                 });
                 Alert.alert('Listo', 'Alumno actualizado');
             } else {
                 await fetch(`${SERVIDOR}/api/admin/alumnos`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json', ...(await obtenerAuthHeaders()) },
-                    body: JSON.stringify({ nombre: formNombre, grado: formGrado, parada: formParada, ruta_id: parseInt(formRutaId), padre_id: 3, orden: alumnos.length + 1 }),
+                    body: JSON.stringify({ nombre: formNombre, grado: formGrado, parada: formParada, ruta_id: parseInt(formRutaId), turno_estudio: formTurnoEstudio, turnoEstudio: formTurnoEstudio, padre_id: 3, orden: alumnos.length + 1 }),
                 });
                 Alert.alert('Listo', 'Alumno agregado');
             }
@@ -955,6 +957,25 @@ export default function PantallaAdmin({ navigation }) {
                                             {ruta.nombre}
                                         </Text>
                                         {formRutaId === ruta.id.toString() && <Check size={16} color="#fff" strokeWidth={3} />}
+                                    </TouchableOpacity>
+                                ))}
+                            </View>
+
+                            <Text style={styles.formLabel}>Turno de estudio</Text>
+                            <View style={styles.rutaSelector}>
+                                {[
+                                    { key: 'matutino', label: 'Matutino' },
+                                    { key: 'vespertino', label: 'Vespertino' },
+                                ].map(turno => (
+                                    <TouchableOpacity
+                                        key={turno.key}
+                                        style={[styles.rutaOpcion, formTurnoEstudio === turno.key && { backgroundColor: colorHeader }]}
+                                        onPress={() => setFormTurnoEstudio(turno.key)}
+                                    >
+                                        <Text style={[styles.rutaOpcionTexto, formTurnoEstudio === turno.key && { color: '#fff' }]}>
+                                            {turno.label}
+                                        </Text>
+                                        {formTurnoEstudio === turno.key && <Check size={16} color="#fff" strokeWidth={3} />}
                                     </TouchableOpacity>
                                 ))}
                             </View>

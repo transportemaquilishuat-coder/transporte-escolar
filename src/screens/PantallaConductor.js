@@ -69,6 +69,16 @@ const THEME = {
   info: '#5856D6',
 };
 
+const TURNOS_ESTUDIO = {
+  mañana: 'matutino',
+  tarde: 'vespertino',
+};
+
+const OPCIONES_TURNO_ESTUDIO = [
+  { key: 'matutino', label: 'Matutino' },
+  { key: 'vespertino', label: 'Vespertino' },
+];
+
 const obtenerAuthHeaders = async () => {
   const token = obtenerToken() || await AsyncStorage.getItem('token');
   return token ? { Authorization: `Bearer ${token}` } : {};
@@ -102,6 +112,7 @@ export default function PantallaConductor({ navigation }) {
     const hora = new Date().getHours();
     return (hora >= 5 && hora < 12) ? 'mañana' : 'tarde';
   });
+  const turnoEstudioActivo = TURNOS_ESTUDIO[turno] || 'matutino';
   const [modalAlumnoVisible, setModalAlumnoVisible] = useState(false);
   const [modalColegioVisible, setModalColegioVisible] = useState(false);
   const [codigoColegio, setCodigoColegio] = useState('');
@@ -142,7 +153,8 @@ export default function PantallaConductor({ navigation }) {
     grado: '',
     parada: '',
     telefonoPadre: '',
-    ruta_id: null
+    ruta_id: null,
+    turno_estudio: 'matutino'
   });
   const [desvioActivo, setDesvioActivo] = useState(false);
   const [distanciaDesvio, setDistanciaDesvio] = useState(0);
@@ -239,7 +251,7 @@ export default function PantallaConductor({ navigation }) {
   // ========== FUNCIONES ==========
   const cargarAlumnos = async () => {
     try {
-      const url = `${SERVIDOR}/api/asignaciones/conductor/${conductorId || CONDUCTOR_ID_DEMO}?turno=${turno}`;
+      const url = `${SERVIDOR}/api/asignaciones/conductor/${conductorId || CONDUCTOR_ID_DEMO}?turno=${turno}&turno_estudio=${turnoEstudioActivo}`;
       const res = await fetch(url, {
         headers: await obtenerAuthHeaders(),
       });
@@ -533,6 +545,8 @@ export default function PantallaConductor({ navigation }) {
           grado: nuevoAlumno.grado || '',
           parada: nuevoAlumno.parada || '',
           ruta_id: rutaId,
+          turno_estudio: nuevoAlumno.turno_estudio,
+          turnoEstudio: nuevoAlumno.turno_estudio,
           orden: alumnos.length + 1,
           activo: true
         }),
@@ -546,7 +560,8 @@ export default function PantallaConductor({ navigation }) {
           grado: '',
           parada: '',
           telefonoPadre: '',
-          ruta_id: rutas.length > 0 ? rutas[0].id : null
+          ruta_id: rutas.length > 0 ? rutas[0].id : null,
+          turno_estudio: 'matutino'
         });
         cargarAlumnos();
         Alert.alert('Éxito', 'Alumno inscrito correctamente');
@@ -659,7 +674,7 @@ export default function PantallaConductor({ navigation }) {
           >
             <Clock size={14} color={turno === 'mañana' ? '#fff' : THEME.textSecondary} strokeWidth={2.5} />
             <Text style={[styles.turnoBtnTexto, turno === 'mañana' && styles.turnoBtnTextoActivo]}>
-              Mañana
+              Ruta matutina
             </Text>
           </TouchableOpacity>
           <TouchableOpacity
@@ -668,7 +683,7 @@ export default function PantallaConductor({ navigation }) {
           >
             <Clock size={14} color={turno === 'tarde' ? '#fff' : THEME.textSecondary} strokeWidth={2.5} />
             <Text style={[styles.turnoBtnTexto, turno === 'tarde' && styles.turnoBtnTextoActivo]}>
-              Tarde
+              Ruta vespertina
             </Text>
           </TouchableOpacity>
         </View>
@@ -1037,13 +1052,6 @@ export default function PantallaConductor({ navigation }) {
               {/* LISTA COMPLETA CON ACCIONES DE GESTIÓN */}
               <View style={styles.gestionHeader}>
                 <Text style={styles.seccionTitulo}>Todos los alumnos</Text>
-                <TouchableOpacity 
-                  style={styles.btnGestionVinculaciones} 
-                  onPress={() => navigation.navigate('ConductorPadres')}
-                >
-                  <Users size={16} color="#fff" strokeWidth={2.5} />
-                  <Text style={styles.btnGestionVinculacionesTexto}>Vinculaciones</Text>
-                </TouchableOpacity>
               </View>
 
               {loading ? (
@@ -1186,6 +1194,30 @@ export default function PantallaConductor({ navigation }) {
                   onChangeText={(text) => setNuevoAlumno({ ...nuevoAlumno, telefonoPadre: text })}
                   placeholderTextColor={THEME.textSecondary}
                 />
+
+                <Text style={styles.modalLabel}>Turno de estudio</Text>
+                <View style={styles.modalRutasContainer}>
+                  {OPCIONES_TURNO_ESTUDIO.map((opcion) => (
+                    <TouchableOpacity
+                      key={opcion.key}
+                      style={[
+                        styles.modalRutaBtn,
+                        nuevoAlumno.turno_estudio === opcion.key && styles.modalRutaBtnActivo
+                      ]}
+                      onPress={() => setNuevoAlumno({ ...nuevoAlumno, turno_estudio: opcion.key })}
+                    >
+                      <Text style={[
+                        styles.modalRutaBtnTexto,
+                        nuevoAlumno.turno_estudio === opcion.key && styles.modalRutaBtnTextoActivo
+                      ]}>
+                        {opcion.label}
+                      </Text>
+                      {nuevoAlumno.turno_estudio === opcion.key && (
+                        <Check size={16} color="#fff" strokeWidth={3} />
+                      )}
+                    </TouchableOpacity>
+                  ))}
+                </View>
 
                 <Text style={styles.modalLabel}>Ruta</Text>
                 <View style={styles.modalRutasContainer}>

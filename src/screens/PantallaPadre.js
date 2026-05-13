@@ -22,7 +22,7 @@ import {
   Bus, Home, Phone, Volume2, VolumeX, AlertTriangle, AlertCircle,
   Check, X, MapPin, Clock, User,
   LogOut, Plus, Users, CreditCard,
-  Sun, CloudRain, Wind, Car
+  Sun, CloudRain, Wind, Car, Activity, Bell, Edit3
 } from 'lucide-react-native';
 import { cargarSesionPersistida, limpiarSesion, obtenerToken, obtenerUsuario } from '../services/session';
 
@@ -79,7 +79,7 @@ const obtenerETADeGoogle = async (origen, destino) => {
 };
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
-const SHEET_MIN = 150;
+const SHEET_MIN = 124;
 const SHEET_MAX = SCREEN_HEIGHT * 0.75;
 
 const obtenerAuthHeaders = async () => {
@@ -170,6 +170,11 @@ export default function PantallaPadre({ navigation }) {
       direccion: hijoSeleccionado.parada || '',
     });
     setModalEditarHijo(true);
+  };
+
+  const obtenerValorFicha = (valor, respaldo = 'No especificado') => {
+    const texto = String(valor || '').trim();
+    return texto || respaldo;
   };
 
   const handleGuardarEdicionHijo = async () => {
@@ -1322,7 +1327,7 @@ export default function PantallaPadre({ navigation }) {
         {/* Tabs del sheet */}
         <View style={styles.sheetTabs}>
           {[
-            { key: 'info', label: 'Info', Icon: MapPin },
+            { key: 'info', label: 'Ficha', Icon: User },
             { key: 'calendario', label: 'Cambios', Icon: Clock },
             { key: 'historial', label: 'Historial', Icon: Clock },
             { key: 'llamar', label: 'Llamar', Icon: Phone },
@@ -1352,30 +1357,46 @@ export default function PantallaPadre({ navigation }) {
           {/* Info */}
           {seccionSheet === 'info' && hijoSeleccionado && (
             <View>
+              <View style={styles.fichaHeader}>
+                <View style={styles.fichaAvatar}>
+                  <User size={22} color={THEME.secondary} strokeWidth={2} />
+                </View>
+                <View style={styles.fichaHeaderText}>
+                  <Text style={styles.fichaTitulo} numberOfLines={1}>{obtenerValorFicha(hijoSeleccionado?.nombre)}</Text>
+                  <Text style={styles.fichaSubtitulo} numberOfLines={1}>
+                    {obtenerValorFicha(hijoSeleccionado?.grado)} · {obtenerValorFicha(hijoSeleccionado?.colegioNombre)}
+                  </Text>
+                </View>
+                <TouchableOpacity onPress={abrirEdicionHijo} style={styles.btnEditarFicha}>
+                  <Edit3 size={16} color="#fff" strokeWidth={2.4} />
+                  <Text style={styles.btnEditarFichaTexto}>Editar</Text>
+                </TouchableOpacity>
+              </View>
+
               <View style={styles.infoSection}>
                 <View style={styles.infoRow}>
                   <Text style={styles.infoLabel}>Alumno</Text>
-                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
-                    <Text style={styles.infoValor}>{hijoSeleccionado?.nombre}</Text>
-                    <TouchableOpacity onPress={abrirEdicionHijo} style={styles.btnEditarHijo}>
-                      <User size={14} color={THEME.secondary} />
-                    </TouchableOpacity>
-                  </View>
+                  <Text style={styles.infoValor}>{obtenerValorFicha(hijoSeleccionado?.nombre)}</Text>
                 </View>
 
                 <View style={styles.infoRow}>
                   <Text style={styles.infoLabel}>Grado</Text>
-                  <Text style={styles.infoValor}>{hijoSeleccionado?.grado}</Text>
+                  <Text style={styles.infoValor}>{obtenerValorFicha(hijoSeleccionado?.grado)}</Text>
                 </View>
 
                 <View style={styles.infoRow}>
                   <Text style={styles.infoLabel}>Colegio</Text>
-                  <Text style={styles.infoValor}>{hijoSeleccionado?.colegioNombre || 'No especificado'}</Text>
+                  <Text style={styles.infoValor}>{obtenerValorFicha(hijoSeleccionado?.colegioNombre)}</Text>
+                </View>
+
+                <View style={styles.infoRow}>
+                  <Text style={styles.infoLabel}>Dirección</Text>
+                  <Text style={styles.infoValor}>{obtenerValorFicha(hijoSeleccionado?.parada || obtenerDireccionTexto(hijoSeleccionado))}</Text>
                 </View>
 
                 <View style={styles.infoRow}>
                   <Text style={styles.infoLabel}>Ruta</Text>
-                  <Text style={styles.infoValor}>{hijoSeleccionado?.rutaNombre}</Text>
+                  <Text style={styles.infoValor}>{obtenerValorFicha(hijoSeleccionado?.rutaNombre, 'Pendiente de asignación')}</Text>
                 </View>
 
                 <View style={styles.infoRow}>
@@ -1400,6 +1421,13 @@ export default function PantallaPadre({ navigation }) {
                     <Text style={[styles.infoValor, { color: estadoColor }]}>{estadoTexto}</Text>
                   </View>
                 </View>
+              </View>
+
+              <View style={styles.autorizacionRutaNota}>
+                <AlertCircle size={16} color={THEME.warning} strokeWidth={2.2} />
+                <Text style={styles.autorizacionRutaTexto}>
+                  Los cambios de dirección o punto de recogida deben ser autorizados por el conductor antes de aplicarse a la ruta.
+                </Text>
               </View>
 
               <TouchableOpacity
@@ -2274,7 +2302,8 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   sheetHandle: {
-    paddingVertical: 12,
+    paddingTop: 8,
+    paddingBottom: 6,
     alignItems: 'center',
   },
   sheetHandleBar: {
@@ -2287,17 +2316,18 @@ const styles = StyleSheet.create({
   sheetTabs: {
     flexDirection: 'row',
     paddingHorizontal: 6,
+    paddingBottom: 4,
     gap: 3,
-    marginBottom: 8,
+    marginBottom: 4,
   },
   sheetTab: {
     flex: 1,
-    minHeight: 44,
+    minHeight: 38,
     flexDirection: 'column',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 2,
-    paddingVertical: 6,
+    gap: 1,
+    paddingVertical: 4,
     paddingHorizontal: 1,
     borderRadius: 8,
     backgroundColor: THEME.background,
@@ -2320,7 +2350,7 @@ const styles = StyleSheet.create({
 
   sheetContenido: {
     paddingHorizontal: 16,
-    paddingBottom: 24,
+    paddingBottom: 18,
   },
   sheetSeccionTitulo: {
     fontSize: 17,
@@ -2328,6 +2358,69 @@ const styles = StyleSheet.create({
     color: THEME.text,
     marginBottom: 12,
     marginTop: 4,
+  },
+
+  fichaHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: 12,
+  },
+  fichaAvatar: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    backgroundColor: '#EEF2FF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: '#C7D2FE',
+  },
+  fichaHeaderText: {
+    flex: 1,
+  },
+  fichaTitulo: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: THEME.text,
+  },
+  fichaSubtitulo: {
+    fontSize: 12,
+    color: THEME.textSecondary,
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  btnEditarFicha: {
+    minHeight: 34,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: THEME.secondary,
+    paddingHorizontal: 12,
+    borderRadius: 10,
+  },
+  btnEditarFichaTexto: {
+    color: '#fff',
+    fontSize: 12,
+    fontWeight: '800',
+  },
+  autorizacionRutaNota: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 8,
+    backgroundColor: '#FFF7ED',
+    borderWidth: 1,
+    borderColor: '#FED7AA',
+    borderRadius: 12,
+    padding: 12,
+    marginTop: 12,
+  },
+  autorizacionRutaTexto: {
+    flex: 1,
+    color: '#9A3412',
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: '600',
   },
 
   // Info Section

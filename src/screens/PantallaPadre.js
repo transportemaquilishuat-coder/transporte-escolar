@@ -79,8 +79,8 @@ const obtenerETADeGoogle = async (origen, destino) => {
 };
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
-const SHEET_MIN = 124;
-const SHEET_MAX = SCREEN_HEIGHT * 0.75;
+const SHEET_MIN = 72;
+const SHEET_MAX = SCREEN_HEIGHT * 0.68;
 
 const obtenerAuthHeaders = async () => {
   const token = obtenerToken() || await AsyncStorage.getItem('token');
@@ -1218,12 +1218,7 @@ export default function PantallaPadre({ navigation }) {
                   <Plus size={18} color="rgba(255,255,255,0.8)" strokeWidth={2.5} />
                 </TouchableOpacity>
               </View>
-            ) : (
-              <TouchableOpacity style={styles.btnVincularHeaderLarge} onPress={() => abrirModalVincularHijo({ requiereDatosAlumno: true })}>
-                <Plus size={18} color="#fff" strokeWidth={3} />
-                <Text style={styles.titulo}>Vincular primer hijo</Text>
-              </TouchableOpacity>
-            )}
+            ) : null}
 
             {hijoSeleccionado && (
               <View style={styles.subtituloRow}>
@@ -1268,7 +1263,7 @@ export default function PantallaPadre({ navigation }) {
           <View style={styles.bannerVinculacionContent}>
             <Plus size={18} color="#fff" strokeWidth={3} />
             <View style={styles.bannerVinculacionTextContainer}>
-              <Text style={styles.bannerVinculacionTitulo}>+ Vincular a tu hijo</Text>
+              <Text style={styles.bannerVinculacionTitulo}>Vincular a tu hijo</Text>
               <Text style={styles.bannerVinculacionDesc}>Usa el código del conductor</Text>
             </View>
           </View>
@@ -1503,7 +1498,7 @@ export default function PantallaPadre({ navigation }) {
                 if (key === 'calendario') handleCargarCambios();
               }}
             >
-              <Icon size={14} color={seccionSheet === key ? '#fff' : THEME.textSecondary} strokeWidth={2} />
+              <Icon size={12} color={seccionSheet === key ? '#fff' : THEME.textSecondary} strokeWidth={2} />
               <Text style={[styles.sheetTabTexto, seccionSheet === key && styles.sheetTabTextoActivo]}>
                 {label}
               </Text>
@@ -2243,9 +2238,9 @@ const styles = StyleSheet.create({
   // Header
   header: {
     backgroundColor: THEME.primaryDark,
-    paddingTop: 44,
-    paddingBottom: 16,
-    paddingHorizontal: 16,
+    paddingTop: 34,
+    paddingBottom: 8,
+    paddingHorizontal: 14,
   },
   headerContent: {
     flexDirection: 'row',
@@ -2253,9 +2248,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   bienvenida: {
-    fontSize: 11,
+    fontSize: 10,
     color: 'rgba(255,255,255,0.6)',
-    marginBottom: 2,
+    marginBottom: 0,
     fontWeight: '500',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
@@ -2266,7 +2261,7 @@ const styles = StyleSheet.create({
     borderRadius: 3,
   },
   titulo: {
-    fontSize: 22,
+    fontSize: 19,
     fontWeight: '700',
     color: '#fff',
     marginBottom: 4,
@@ -2277,20 +2272,20 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   subtitulo: {
-    fontSize: 13,
+    fontSize: 12,
     color: 'rgba(255,255,255,0.8)',
     fontWeight: '500',
   },
   botonSalir: {
     backgroundColor: 'rgba(255,255,255,0.15)',
-    padding: 10,
-    borderRadius: 10,
+    padding: 8,
+    borderRadius: 9,
   },
 
   // ETA Sutil
   etaContainer: {
     position: 'absolute',
-    top: 100, // Debajo del header
+    top: 78, // Debajo del header compacto
     left: 14,
     zIndex: 20,
   },
@@ -2565,8 +2560,8 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   sheetHandle: {
-    paddingTop: 8,
-    paddingBottom: 6,
+    paddingTop: 5,
+    paddingBottom: 3,
     alignItems: 'center',
   },
   sheetHandleBar: {
@@ -2578,21 +2573,21 @@ const styles = StyleSheet.create({
 
   sheetTabs: {
     flexDirection: 'row',
-    paddingHorizontal: 6,
-    paddingBottom: 4,
-    gap: 3,
-    marginBottom: 4,
+    paddingHorizontal: 5,
+    paddingBottom: 2,
+    gap: 2,
+    marginBottom: 1,
   },
   sheetTab: {
     flex: 1,
-    minHeight: 38,
+    minHeight: 26,
     flexDirection: 'column',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 1,
-    paddingVertical: 4,
+    gap: 0,
+    paddingVertical: 2,
     paddingHorizontal: 1,
-    borderRadius: 8,
+    borderRadius: 7,
     backgroundColor: THEME.background,
     borderWidth: 1,
     borderColor: THEME.border,
@@ -2602,7 +2597,7 @@ const styles = StyleSheet.create({
     borderColor: THEME.primary,
   },
   sheetTabTexto: {
-    fontSize: 8,
+    fontSize: 7,
     color: THEME.textSecondary,
     fontWeight: '800',
     textAlign: 'center',
@@ -2612,8 +2607,8 @@ const styles = StyleSheet.create({
   },
 
   sheetContenido: {
-    paddingHorizontal: 16,
-    paddingBottom: 18,
+    paddingHorizontal: 14,
+    paddingBottom: 8,
   },
   sheetSeccionTitulo: {
     fontSize: 17,
@@ -3229,12 +3224,6 @@ const styles = StyleSheet.create({
     marginLeft: 10,
     borderWidth: 1,
     borderColor: 'rgba(255,255,255,0.2)',
-  },
-  btnVincularHeaderLarge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    paddingVertical: 8,
   },
   modalInput: {
     backgroundColor: THEME.background,

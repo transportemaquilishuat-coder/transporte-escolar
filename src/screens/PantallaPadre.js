@@ -1256,20 +1256,31 @@ export default function PantallaPadre({ navigation }) {
       <View style={styles.mapaContainer}>
         {/* BANNER FLOTANTE +VINCULAR HIJO (Solicitado por el usuario) */}
         <TouchableOpacity 
-          style={styles.bannerVinculacion} 
+          style={[
+            styles.bannerVinculacion,
+            hijos.length > 0 && styles.bannerVinculacionCompacto,
+          ]}
           onPress={() => abrirModalVincularHijo({ requiereDatosAlumno: hijos.length === 0 })}
           activeOpacity={0.9}
         >
+          {hijos.length === 0 ? (
+            <>
           <View style={styles.bannerVinculacionContent}>
             <Plus size={18} color="#fff" strokeWidth={3} />
             <View style={styles.bannerVinculacionTextContainer}>
-              <Text style={styles.bannerVinculacionTitulo}>Vincular a tu hijo</Text>
+              <Text style={styles.bannerVinculacionTitulo}>Vincular hijo</Text>
               <Text style={styles.bannerVinculacionDesc}>Usa el código del conductor</Text>
             </View>
           </View>
           <View style={styles.bannerVinculacionBtn}>
             <Text style={styles.bannerVinculacionBtnText}>Vincular</Text>
           </View>
+            </>
+          ) : (
+            <View style={styles.bannerVinculacionIconoSolo}>
+              <Plus size={24} color="#fff" strokeWidth={3} />
+            </View>
+          )}
         </TouchableOpacity>
 
         {hijoSeleccionado && !hijoSeleccionado.rutaId && !cargandoHijos && (
@@ -3331,10 +3342,10 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 10,
     left: 10,
-    right: 10,
+    width: 238,
     backgroundColor: THEME.primary,
     borderRadius: 14,
-    padding: 12,
+    padding: 10,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
@@ -3345,10 +3356,22 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
     elevation: 8,
   },
+  bannerVinculacionCompacto: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    padding: 0,
+    justifyContent: 'center',
+  },
+  bannerVinculacionIconoSolo: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   bannerVinculacionContent: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: 8,
     flex: 1,
   },
   bannerVinculacionTextContainer: {
@@ -3356,20 +3379,20 @@ const styles = StyleSheet.create({
   },
   bannerVinculacionTitulo: {
     color: '#fff',
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '800',
   },
   bannerVinculacionDesc: {
     color: 'rgba(255,255,255,0.7)',
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '500',
   },
   bannerVinculacionBtn: {
     backgroundColor: THEME.secondary,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 10,
-    marginLeft: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderRadius: 9,
+    marginLeft: 8,
   },
   bannerVinculacionBtnText: {
     color: '#fff',

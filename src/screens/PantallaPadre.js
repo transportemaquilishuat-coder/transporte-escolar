@@ -155,6 +155,8 @@ export default function PantallaPadre({ navigation }) {
   const [datosNuevoAlumno, setDatosNuevoAlumno] = useState({
     nombre: '',
     grado: '',
+    colegioNombre: '',
+    direccion: '',
     turno_estudio: 'matutino',
   });
 
@@ -305,6 +307,28 @@ export default function PantallaPadre({ navigation }) {
       });
     }
   }, []);
+
+  const crearDatosAlumnoVacio = () => ({
+    nombre: '',
+    grado: '',
+    colegioNombre: '',
+    direccion: obtenerDireccionTexto(usuario),
+    turno_estudio: 'matutino',
+  });
+
+  const abrirModalVincularHijo = ({ requiereDatosAlumno = false } = {}) => {
+    setMostrarFormAlumno(requiereDatosAlumno);
+    setDatosNuevoAlumno((prev) => ({
+      ...prev,
+      direccion: prev.direccion || obtenerDireccionTexto(usuario),
+    }));
+    setModalVincular(true);
+  };
+
+  const cerrarModalVincularHijo = () => {
+    if (loadingVincular) return;
+    setModalVincular(false);
+  };
 
   // Posicion arrastrable del clima
   const climaPos = useRef(new Animated.ValueXY({ x: 14, y: 98 })).current;
@@ -857,9 +881,24 @@ export default function PantallaPadre({ navigation }) {
       return;
     }
 
-    // Si el usuario decide llenar el formulario, validamos datos del alumno
-    if (mostrarFormAlumno && !datosNuevoAlumno.nombre.trim()) {
+    const debeEnviarDatosAlumno = mostrarFormAlumno || hijos.length === 0;
+    const direccionAlumno = datosNuevoAlumno.direccion.trim() || obtenerDireccionTexto(usuario);
+
+    if (debeEnviarDatosAlumno && !datosNuevoAlumno.nombre.trim()) {
       Alert.alert('Error', 'Ingresa el nombre del estudiante.');
+      setMostrarFormAlumno(true);
+      return;
+    }
+
+    if (debeEnviarDatosAlumno && !datosNuevoAlumno.grado.trim()) {
+      Alert.alert('Error', 'Ingresa el grado del estudiante.');
+      setMostrarFormAlumno(true);
+      return;
+    }
+
+    if (debeEnviarDatosAlumno && !datosNuevoAlumno.colegioNombre.trim()) {
+      Alert.alert('Error', 'Ingresa el colegio del estudiante.');
+      setMostrarFormAlumno(true);
       return;
     }
 
@@ -867,10 +906,21 @@ export default function PantallaPadre({ navigation }) {
     try {
       const payload = { 
         codigo: codigoVinculacion.trim().toUpperCase(),
-        ...(mostrarFormAlumno ? { 
+        ...(debeEnviarDatosAlumno ? {
+          hijo: {
+            nombre: datosNuevoAlumno.nombre.trim(),
+            grado: datosNuevoAlumno.grado.trim(),
+            colegioNombre: datosNuevoAlumno.colegioNombre.trim(),
+            direccion: direccionAlumno,
+            codigoConductor: codigoVinculacion.trim().toUpperCase(),
+            turno_estudio: datosNuevoAlumno.turno_estudio,
+          },
           alumno: {
-            nombre: datosNuevoAlumno.nombre,
-            grado: datosNuevoAlumno.grado,
+            nombre: datosNuevoAlumno.nombre.trim(),
+            grado: datosNuevoAlumno.grado.trim(),
+            colegioNombre: datosNuevoAlumno.colegioNombre.trim(),
+            direccion: direccionAlumno,
+            parada: direccionAlumno,
             turno_estudio: datosNuevoAlumno.turno_estudio,
             turnoEstudio: datosNuevoAlumno.turno_estudio,
           }
@@ -898,7 +948,7 @@ export default function PantallaPadre({ navigation }) {
       setModalVincular(false);
       setCodigoVinculacion('');
       setMostrarFormAlumno(false);
-      setDatosNuevoAlumno({ nombre: '', grado: '', turno_estudio: 'matutino' });
+      setDatosNuevoAlumno(crearDatosAlumnoVacio());
 
       Alert.alert(
         '¡Listo!',
@@ -1163,13 +1213,13 @@ export default function PantallaPadre({ navigation }) {
                 </ScrollView>
                 <TouchableOpacity
                   style={styles.btnAddHijoSubtle}
-                  onPress={() => setModalVincular(true)}
+                  onPress={() => abrirModalVincularHijo()}
                 >
                   <Plus size={18} color="rgba(255,255,255,0.8)" strokeWidth={2.5} />
                 </TouchableOpacity>
               </View>
             ) : (
-              <TouchableOpacity style={styles.btnVincularHeaderLarge} onPress={() => setModalVincular(true)}>
+              <TouchableOpacity style={styles.btnVincularHeaderLarge} onPress={() => abrirModalVincularHijo({ requiereDatosAlumno: true })}>
                 <Plus size={18} color="#fff" strokeWidth={3} />
                 <Text style={styles.titulo}>Vincular primer hijo</Text>
               </TouchableOpacity>
@@ -1212,10 +1262,7 @@ export default function PantallaPadre({ navigation }) {
         {/* BANNER FLOTANTE +VINCULAR HIJO (Solicitado por el usuario) */}
         <TouchableOpacity 
           style={styles.bannerVinculacion} 
-          onPress={() => {
-            setMostrarFormAlumno(hijos.length === 0); // Si no tiene hijos, mostrar form por defecto
-            setModalVincular(true);
-          }}
+          onPress={() => abrirModalVincularHijo({ requiereDatosAlumno: hijos.length === 0 })}
           activeOpacity={0.9}
         >
           <View style={styles.bannerVinculacionContent}>
@@ -1883,7 +1930,7 @@ export default function PantallaPadre({ navigation }) {
           <View style={[styles.modalCard, { maxHeight: '85%' }]}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitulo}>Vincular estudiante</Text>
-              <TouchableOpacity onPress={() => setModalVincular(false)} style={styles.modalCloseBtn}>
+              <TouchableOpacity onPress={cerrarModalVincularHijo} style={styles.modalCloseBtn}>
                 <X size={24} color={THEME.textSecondary} strokeWidth={2} />
               </TouchableOpacity>
             </View>
@@ -1894,6 +1941,19 @@ export default function PantallaPadre({ navigation }) {
               </Text>
 
               <Text style={styles.labelField}>Código de vinculación</Text>
+              {hijos.length === 0 && (
+                <View style={styles.infoPadrePendiente}>
+                  <Text style={styles.infoPadreTitulo}>Perfil del padre completo</Text>
+                  <Text style={styles.infoPadreTexto}>
+                    {usuario?.nombre || 'Padre de familia'}
+                    {obtenerDireccionTexto(usuario) ? ` - ${obtenerDireccionTexto(usuario)}` : ''}
+                  </Text>
+                  <Text style={styles.infoPadrePendienteTexto}>
+                    Falta registrar la informacion del estudiante para completar la vinculacion.
+                  </Text>
+                </View>
+              )}
+
               <TextInput
                 style={[styles.modalInput, { fontSize: 20, textAlign: 'center', letterSpacing: 2, color: THEME.secondary }]}
                 placeholder="EJ: BUS-1234"
@@ -1904,11 +1964,16 @@ export default function PantallaPadre({ navigation }) {
 
               {/* OPCIÓN PARA AGREGAR DATOS DEL ALUMNO SI ES NUEVO */}
               <TouchableOpacity 
-                style={styles.btnToggleForm} 
-                onPress={() => setMostrarFormAlumno(!mostrarFormAlumno)}
+                style={[styles.btnToggleForm, hijos.length === 0 && styles.btnToggleFormBloqueado]}
+                onPress={() => {
+                  if (hijos.length === 0) return;
+                  setMostrarFormAlumno(!mostrarFormAlumno);
+                }}
               >
                 <Text style={styles.btnToggleFormTexto}>
-                  {mostrarFormAlumno ? "- Ocultar datos del estudiante" : "+ Agregar datos del estudiante (Si es nuevo)"}
+                  {hijos.length === 0
+                    ? "Datos del estudiante pendientes"
+                    : mostrarFormAlumno ? "- Ocultar datos del estudiante" : "+ Agregar datos del estudiante (Si es nuevo)"}
                 </Text>
               </TouchableOpacity>
 
@@ -1930,6 +1995,25 @@ export default function PantallaPadre({ navigation }) {
                     onChangeText={(v) => setDatosNuevoAlumno({...datosNuevoAlumno, grado: v})}
                   />
 
+                  <Text style={styles.labelField}>Colegio</Text>
+                  <TextInput
+                    style={styles.modalInput}
+                    placeholder="Nombre del colegio"
+                    value={datosNuevoAlumno.colegioNombre}
+                    onChangeText={(v) => setDatosNuevoAlumno({...datosNuevoAlumno, colegioNombre: v})}
+                  />
+
+                  <Text style={styles.labelField}>Direccion de recogida</Text>
+                  <TextInput
+                    style={styles.modalInput}
+                    placeholder="Direccion de referencia"
+                    value={datosNuevoAlumno.direccion}
+                    onChangeText={(v) => setDatosNuevoAlumno({...datosNuevoAlumno, direccion: v})}
+                  />
+                  <Text style={styles.campoAyudaTexto}>
+                    Despues podras ubicar el punto exacto en el mapa.
+                  </Text>
+
                   <Text style={styles.labelField}>Turno de estudio</Text>
                   <View style={styles.tipoSelector}>
                     {['matutino', 'vespertino'].map((t) => (
@@ -1950,7 +2034,7 @@ export default function PantallaPadre({ navigation }) {
               <View style={styles.modalBotones}>
                 <TouchableOpacity
                   style={styles.modalBtnCancelar}
-                  onPress={() => setModalVincular(false)}
+                  onPress={cerrarModalVincularHijo}
                   disabled={loadingVincular}
                 >
                   <Text style={styles.modalBtnCancelarTexto}>Cancelar</Text>
@@ -3209,6 +3293,9 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     marginBottom: 10,
   },
+  btnToggleFormBloqueado: {
+    opacity: 0.85,
+  },
   btnToggleFormTexto: {
     fontSize: 14,
     color: THEME.secondary,
@@ -3222,6 +3309,33 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     borderWidth: 1,
     borderColor: 'rgba(0,122,255,0.1)',
+  },
+  infoPadrePendiente: {
+    backgroundColor: '#F8FAFC',
+    borderWidth: 1,
+    borderColor: '#CBD5E1',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 16,
+  },
+  infoPadreTitulo: {
+    color: THEME.text,
+    fontSize: 13,
+    fontWeight: '800',
+    marginBottom: 4,
+  },
+  infoPadreTexto: {
+    color: THEME.textSecondary,
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: '600',
+    marginBottom: 8,
+  },
+  infoPadrePendienteTexto: {
+    color: THEME.warning,
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: '700',
   },
   // Nuevos estilos Gobernanza Flexible
   bannerVinculacion: {

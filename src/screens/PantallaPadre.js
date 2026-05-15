@@ -1543,33 +1543,6 @@ export default function PantallaPadre({ navigation }) {
           <View style={styles.sheetHandleBar} />
         </View>
 
-        {/* Tabs del sheet */}
-        <View style={styles.sheetTabs}>
-          {[
-            { key: 'info', label: 'Ficha', Icon: User },
-            { key: 'calendario', label: 'Cambios', Icon: Clock },
-            { key: 'historial', label: 'Historial', Icon: Clock },
-            { key: 'llamar', label: 'Llamar', Icon: Phone },
-            { key: 'carpool', label: 'Carpool', Icon: Car },
-            { key: 'suscripcion', label: 'Plan', Icon: CreditCard },
-          ].map(({ key, label, Icon }) => (
-            <TouchableOpacity
-              key={key}
-              style={[styles.sheetTab, seccionSheet === key && styles.sheetTabActivo]}
-              onPress={() => {
-                setSeccionSheet(key);
-                abrirSheet();
-                if (key === 'calendario') handleCargarCambios();
-              }}
-            >
-              <Icon size={12} color={seccionSheet === key ? '#fff' : THEME.textSecondary} strokeWidth={2} />
-              <Text style={[styles.sheetTabTexto, seccionSheet === key && styles.sheetTabTextoActivo]}>
-                {label}
-              </Text>
-            </TouchableOpacity>
-          ))}
-        </View>
-
         {/* Contenido del sheet */}
         <ScrollView style={styles.sheetContenido} showsVerticalScrollIndicator={false}>
 
@@ -1901,6 +1874,33 @@ export default function PantallaPadre({ navigation }) {
           )}
 
         </ScrollView>
+
+        {/* Tabs del sheet */}
+        <View style={styles.sheetTabs}>
+          {[
+            { key: 'info', label: 'Ficha', Icon: User },
+            { key: 'calendario', label: 'Cambios', Icon: Clock },
+            { key: 'historial', label: 'Historial', Icon: Clock },
+            { key: 'llamar', label: 'Llamar', Icon: Phone },
+            { key: 'carpool', label: 'Carpool', Icon: Car },
+            { key: 'suscripcion', label: 'Plan', Icon: CreditCard },
+          ].map(({ key, label, Icon }) => (
+            <TouchableOpacity
+              key={key}
+              style={[styles.sheetTab, seccionSheet === key && styles.sheetTabActivo]}
+              onPress={() => {
+                setSeccionSheet(key);
+                abrirSheet();
+                if (key === 'calendario') handleCargarCambios();
+              }}
+            >
+              <Icon size={12} color={seccionSheet === key ? '#fff' : THEME.textSecondary} strokeWidth={2} />
+              <Text style={[styles.sheetTabTexto, seccionSheet === key && styles.sheetTabTextoActivo]}>
+                {label}
+              </Text>
+            </TouchableOpacity>
+          ))}
+        </View>
       </Animated.View>
 
       {/* MODAL AUSENCIA */}
@@ -2662,6 +2662,7 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     elevation: 20,
     overflow: 'hidden',
+    flexDirection: 'column',
   },
   sheetHandle: {
     paddingTop: 5,
@@ -2678,9 +2679,12 @@ const styles = StyleSheet.create({
   sheetTabs: {
     flexDirection: 'row',
     paddingHorizontal: 5,
-    paddingBottom: 2,
+    paddingTop: 3,
+    paddingBottom: 6,
     gap: 2,
-    marginBottom: 1,
+    borderTopWidth: 1,
+    borderTopColor: THEME.border,
+    backgroundColor: THEME.surface,
   },
   sheetTab: {
     flex: 1,
@@ -2711,8 +2715,8 @@ const styles = StyleSheet.create({
   },
 
   sheetContenido: {
+    flex: 1,
     paddingHorizontal: 14,
-    paddingBottom: 8,
   },
   sheetSeccionTitulo: {
     fontSize: 17,

@@ -193,6 +193,24 @@ export default function PantallaPadre({ navigation }) {
     Boolean(alumno?.latitude && alumno?.longitude)
   );
 
+  const puntoExactoConfirmadoBackend = (alumno = {}) => (
+    alumno?.puntoRecogidaConfirmado === true ||
+    alumno?.punto_recogida_confirmado === true ||
+    alumno?.puntoExactoConfirmado === true ||
+    alumno?.punto_exacto_confirmado === true
+  );
+
+  const coordenadasCoinciden = (a = {}, b = {}) => {
+    const latA = Number(a?.latitude);
+    const lngA = Number(a?.longitude);
+    const latB = Number(b?.latitude);
+    const lngB = Number(b?.longitude);
+
+    if (![latA, lngA, latB, lngB].every(Number.isFinite)) return false;
+
+    return Math.abs(latA - latB) < 0.00001 && Math.abs(lngA - lngB) < 0.00001;
+  };
+
   const direccionEstaBloqueada = (alumno = {}) => (
     Boolean(obtenerDireccionFicha(alumno) || tienePuntoRecogida(alumno))
   );
@@ -524,13 +542,23 @@ export default function PantallaPadre({ navigation }) {
       if (!hijoSeleccionado) return;
 
       const configurado = await AsyncStorage.getItem(`punto_configurado_${hijoSeleccionado.id}`);
-      const estaConfigurado = configurado === 'true';
+      const coordsConfiguradasRaw = await AsyncStorage.getItem(`punto_configurado_${hijoSeleccionado.id}_coords`);
+      let coordsConfiguradas = null;
+
+      try {
+        coordsConfiguradas = coordsConfiguradasRaw ? JSON.parse(coordsConfiguradasRaw) : null;
+      } catch (_e) {
+        coordsConfiguradas = null;
+      }
 
       if (hijoSeleccionado.latitude && hijoSeleccionado.longitude) {
         const coords = {
           latitude: Number(hijoSeleccionado.latitude),
           longitude: Number(hijoSeleccionado.longitude)
         };
+        const estaConfigurado = puntoExactoConfirmadoBackend(hijoSeleccionado) ||
+          (configurado === 'true' && coordenadasCoinciden(coordsConfiguradas, coords));
+
         setPuntoRecogida(coords);
         // Solo bloqueamos si el usuario ya lo confirmó explícitamente en el mapa anteriormente
         setPuntoRecogidaBloqueado(estaConfigurado);
@@ -1137,10 +1165,14 @@ export default function PantallaPadre({ navigation }) {
       
       // Persistir que ya se configuró el punto para este hijo (y otros si aplica)
       if (aplicarATodos) {
-        const promesas = hijos.map(h => AsyncStorage.setItem(`punto_configurado_${h.id}`, 'true'));
+        const promesas = hijos.flatMap(h => [
+          AsyncStorage.setItem(`punto_configurado_${h.id}`, 'true'),
+          AsyncStorage.setItem(`punto_configurado_${h.id}_coords`, JSON.stringify(coords)),
+        ]);
         await Promise.all(promesas);
       } else {
         await AsyncStorage.setItem(`punto_configurado_${hijoSeleccionado.id}`, 'true');
+        await AsyncStorage.setItem(`punto_configurado_${hijoSeleccionado.id}_coords`, JSON.stringify(coords));
       }
 
       // Actualizar localmente
@@ -2460,7 +2492,7 @@ const styles = StyleSheet.create({
   // Botón ausencia - posición original, color conservado
   btnAusencia: {
     position: 'absolute',
-    top: 14,
+    top: 64,
     right: 14,
     backgroundColor: THEME.error, // Rojo conservado
     paddingHorizontal: 11,
@@ -3423,6 +3455,7 @@ const styles = StyleSheet.create({
     borderRadius: 24,
     padding: 0,
     justifyContent: 'center',
+    left: 76,
   },
   bannerVinculacionIconoSolo: {
     flex: 1,

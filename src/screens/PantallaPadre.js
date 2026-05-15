@@ -1053,6 +1053,16 @@ export default function PantallaPadre({ navigation }) {
     );
   };
 
+  const ajustarPuntoSugerido = () => {
+    setPuntoSugeridoPorDireccion(false);
+  };
+
+  const confirmarPuntoSugerido = () => {
+    if (puntoRecogida) {
+      guardarPuntoRecogida(puntoRecogida, false);
+    }
+  };
+
   const guardarPuntoRecogida = async (coords, aplicarATodos = false) => {
     if (!hijoSeleccionado) return;
     setGuardandoPunto(true);

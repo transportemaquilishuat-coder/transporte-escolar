@@ -107,7 +107,7 @@ export default function PantallaConductor({ navigation }) {
   const [error, setError] = useState('');
   const intervaloRef = useRef(null);
   const abordajesEnProcesoRef = useRef(new Set());
-  const [tabActiva, setTabActiva] = useState('control');
+  const [tabActiva, setTabActiva] = useState('mapa');
   const [turno, setTurno] = useState(() => {
     const hora = new Date().getHours();
     return (hora >= 5 && hora < 12) ? 'mañana' : 'tarde';
@@ -800,26 +800,6 @@ export default function PantallaConductor({ navigation }) {
                 </Animated.View>
               )}
 
-              {/* BOTONES INICIO/FIN */}
-              <View style={styles.botonesContainer}>
-                <TouchableOpacity
-                  style={[styles.btnIniciar, rutaActiva && styles.btnDeshabilitado]}
-                  onPress={iniciarRuta}
-                  disabled={rutaActiva}
-                >
-                  <Play size={16} color="#fff" strokeWidth={2.5} fill="#fff" />
-                  <Text style={styles.btnIniciarTexto}>Iniciar</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.btnFinalizar, !rutaActiva && styles.btnDeshabilitado]}
-                  onPress={finalizarRuta}
-                  disabled={!rutaActiva}
-                >
-                  <Square size={16} color="#fff" strokeWidth={2.5} fill="#fff" />
-                  <Text style={styles.btnFinalizarTexto}>Finalizar</Text>
-                </TouchableOpacity>
-              </View>
-
               {/* PROGRESO */}
               <View style={styles.tarjetaProgreso}>
                 <Text style={styles.progresoTitulo}>Progreso de hoy</Text>
@@ -910,25 +890,6 @@ export default function PantallaConductor({ navigation }) {
                 ))
               )}
 
-              {/* EVENTOS RÁPIDOS */}
-              <Text style={styles.seccionTitulo}>Eventos rápidos</Text>
-              <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.eventosScroll}>
-                <View style={styles.eventosGrid}>
-                  {[
-                    'Retraso en ruta',
-                    'Llegando al colegio',
-                    'Alumno no abordó',
-                    'Parada no programada',
-                    'Problema mecánico',
-                    'Todos a bordo',
-                  ].map((ev, i) => (
-                    <TouchableOpacity key={i} style={styles.eventoBtn} onPress={() => agregarEvento(ev)}>
-                      <Text style={styles.eventoBtnTexto}>{ev}</Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              </ScrollView>
-
               {/* BITÁCORA */}
               {eventos.length > 0 && (
                 <View style={styles.bitacora}>
@@ -1009,6 +970,45 @@ export default function PantallaConductor({ navigation }) {
                       <Text style={styles.leyendaTexto}>Abordado</Text>
                     </View>
                   </View>
+                </View>
+
+                <View style={styles.mapControlsOverlay}>
+                  <View style={styles.botonesContainer}>
+                    <TouchableOpacity
+                      style={[styles.btnIniciar, rutaActiva && styles.btnDeshabilitado]}
+                      onPress={iniciarRuta}
+                      disabled={rutaActiva}
+                    >
+                      <Play size={16} color="#fff" strokeWidth={2.5} fill="#fff" />
+                      <Text style={styles.btnIniciarTexto}>Iniciar</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.btnFinalizar, !rutaActiva && styles.btnDeshabilitado]}
+                      onPress={finalizarRuta}
+                      disabled={!rutaActiva}
+                    >
+                      <Square size={16} color="#fff" strokeWidth={2.5} fill="#fff" />
+                      <Text style={styles.btnFinalizarTexto}>Finalizar</Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  <Text style={styles.mapControlsTitle}>Eventos rápidos</Text>
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.eventosScroll}>
+                    <View style={styles.eventosGrid}>
+                      {[
+                        'Retraso en ruta',
+                        'Llegando al colegio',
+                        'Alumno no abordó',
+                        'Parada no programada',
+                        'Problema mecánico',
+                        'Todos a bordo',
+                      ].map((ev, i) => (
+                        <TouchableOpacity key={i} style={styles.eventoBtn} onPress={() => agregarEvento(ev)}>
+                          <Text style={styles.eventoBtnTexto}>{ev}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  </ScrollView>
                 </View>
               </View>
             </View>
@@ -1550,7 +1550,7 @@ const styles = StyleSheet.create({
   botonesContainer: {
     flexDirection: 'row',
     gap: 10,
-    marginBottom: 12,
+    marginBottom: 10,
   },
   btnIniciar: {
     flex: 1,
@@ -2163,7 +2163,7 @@ const styles = StyleSheet.create({
     borderColor: '#FEE2E2',
   },
   mapContainer: {
-    height: 500,
+    height: 620,
     borderRadius: 20,
     overflow: 'hidden',
     borderWidth: 1,
@@ -2198,7 +2198,7 @@ const styles = StyleSheet.create({
   },
   mapOverlay: {
     position: 'absolute',
-    bottom: 16,
+    top: 16,
     left: 16,
     right: 16,
     backgroundColor: 'rgba(255,255,255,0.95)',
@@ -2209,6 +2209,28 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 10,
     elevation: 5,
+  },
+  mapControlsOverlay: {
+    position: 'absolute',
+    left: 16,
+    right: 16,
+    bottom: 16,
+    backgroundColor: 'rgba(255,255,255,0.96)',
+    padding: 14,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: THEME.border,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 10,
+    elevation: 5,
+  },
+  mapControlsTitle: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: THEME.text,
+    marginBottom: 8,
   },
   mapOverlayTitulo: {
     fontSize: 14,

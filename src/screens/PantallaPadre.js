@@ -79,7 +79,7 @@ const obtenerETADeGoogle = async (origen, destino) => {
 };
 const { height: SCREEN_HEIGHT } = Dimensions.get('window');
 
-const SHEET_MIN = 72;
+const SHEET_MIN = 52;
 const SHEET_MAX = SCREEN_HEIGHT * 0.68;
 
 const obtenerAuthHeaders = async () => {
@@ -2665,8 +2665,8 @@ const styles = StyleSheet.create({
     flexDirection: 'column',
   },
   sheetHandle: {
-    paddingTop: 5,
-    paddingBottom: 3,
+    paddingTop: 4,
+    paddingBottom: 2,
     alignItems: 'center',
   },
   sheetHandleBar: {
@@ -2679,8 +2679,8 @@ const styles = StyleSheet.create({
   sheetTabs: {
     flexDirection: 'row',
     paddingHorizontal: 5,
-    paddingTop: 3,
-    paddingBottom: 6,
+    paddingTop: 2,
+    paddingBottom: 5,
     gap: 2,
     borderTopWidth: 1,
     borderTopColor: THEME.border,
@@ -2717,6 +2717,7 @@ const styles = StyleSheet.create({
   sheetContenido: {
     flex: 1,
     paddingHorizontal: 14,
+    backgroundColor: THEME.surface,
   },
   sheetSeccionTitulo: {
     fontSize: 17,
@@ -3459,6 +3460,7 @@ const styles = StyleSheet.create({
     borderRadius: 24,
     padding: 0,
     justifyContent: 'center',
+    top: 64,
     left: 76,
   },
   bannerVinculacionIconoSolo: {

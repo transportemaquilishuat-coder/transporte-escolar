@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useRef } from 'react';
 import {
   View,
   Text,
@@ -82,6 +82,35 @@ export default function RegistroCodigoScreen({ navigation, route }) {
     fechaFin: '',
   });
   const [hijosRegistro, setHijosRegistro] = useState([crearHijoVacio()]);
+
+  // Autocomplete Colegios
+  const [sugerenciasColegios, setSugerenciasColegios] = useState([]);
+  const [buscandoColegios, setBuscandoColegios] = useState(false);
+  const [indiceHijoBusqueda, setIndiceHijoBusqueda] = useState(-1);
+  const searchTimeoutRef = useRef(null);
+
+  const buscarColegios = async (texto, indice) => {
+    setIndiceHijoBusqueda(indice);
+    if (texto.length < 3) {
+      setSugerenciasColegios([]);
+      return;
+    }
+
+    if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
+
+    searchTimeoutRef.current = setTimeout(async () => {
+      setBuscandoColegios(true);
+      try {
+        const res = await fetch(`https://transporte-backend-prod.onrender.com/api/catalogos/colegios?q=${encodeURIComponent(texto)}`);
+        const data = await res.json();
+        setSugerenciasColegios(data.colegios || data || []);
+      } catch (e) {
+        console.log('Error buscando colegios:', e);
+      } finally {
+        setBuscandoColegios(false);
+      }
+    }, 500);
+  };
 
   const tituloPantalla = useMemo(
     () => TITULOS_POR_DESTINO[destino] || 'Registro de usuario',
@@ -504,9 +533,30 @@ export default function RegistroCodigoScreen({ navigation, route }) {
                     style={styles.input}
                     placeholder="Ej: Colegio San José"
                     value={hijo.colegioNombre}
-                    onChangeText={(valor) => actualizarHijo(indice, 'colegioNombre', valor)}
+                    onChangeText={(valor) => {
+                      actualizarHijo(indice, 'colegioNombre', valor);
+                      buscarColegios(valor, indice);
+                    }}
                     placeholderTextColor="#555555"
                   />
+                  {buscandoColegios && indiceHijoBusqueda === indice && <ActivityIndicator size="small" color={brandColor} style={{ marginTop: -10, marginBottom: 10 }} />}
+                  {sugerenciasColegios.length > 0 && indiceHijoBusqueda === indice && (
+                    <View style={styles.sugerenciasContainer}>
+                      {sugerenciasColegios.map((col, idx) => (
+                        <TouchableOpacity
+                          key={idx}
+                          style={styles.sugerenciaItem}
+                          onPress={() => {
+                            actualizarHijo(indice, 'colegioNombre', col.nombre_oficial || col.nombre || col);
+                            setSugerenciasColegios([]);
+                            setIndiceHijoBusqueda(-1);
+                          }}
+                        >
+                          <Text style={styles.sugerenciaTexto}>{col.nombre_oficial || col.nombre || col}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  )}
 
                   <Text style={styles.labelField}>Turno de estudio</Text>
                   <View style={styles.turnoSelector}>
@@ -933,5 +983,29 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
     textDecorationLine: 'underline',
+  },
+  sugerenciasContainer: {
+    backgroundColor: '#1A1D21',
+    borderWidth: 1,
+    borderColor: '#333333',
+    borderRadius: 14,
+    marginTop: -14,
+    marginBottom: 16,
+    maxHeight: 140,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    elevation: 5,
+  },
+  sugerenciaItem: {
+    padding: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#303030',
+  },
+  sugerenciaTexto: {
+    fontSize: 13,
+    color: '#E0E0E0',
+    fontWeight: '700',
   },
 });

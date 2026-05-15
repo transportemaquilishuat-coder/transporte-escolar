@@ -298,6 +298,33 @@ export default function PantallaPadre({ navigation }) {
   const [interesCarpool, setInteresCarpool] = useState(false);
   const [usuario, setUsuario] = useState(obtenerUsuario());
 
+  // Autocomplete Colegios
+  const [sugerenciasColegios, setSugerenciasColegios] = useState([]);
+  const [buscandoColegios, setBuscandoColegios] = useState(false);
+  const searchTimeoutRef = useRef(null);
+
+  const buscarColegios = async (texto) => {
+    if (texto.length < 3) {
+      setSugerenciasColegios([]);
+      return;
+    }
+
+    if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
+
+    searchTimeoutRef.current = setTimeout(async () => {
+      setBuscandoColegios(true);
+      try {
+        const res = await fetch(`https://transporte-backend-prod.onrender.com/api/catalogos/colegios?q=${encodeURIComponent(texto)}`);
+        const data = await res.json();
+        setSugerenciasColegios(data.colegios || data || []);
+      } catch (e) {
+        console.log('Error buscando colegios:', e);
+      } finally {
+        setBuscandoColegios(false);
+      }
+    }, 500); // 500ms debounce
+  };
+
   useEffect(() => {
     const user = obtenerUsuario();
     if (user) setUsuario(user);
@@ -2016,8 +2043,28 @@ export default function PantallaPadre({ navigation }) {
                     style={styles.modalInput}
                     placeholder="Nombre del colegio"
                     value={datosNuevoAlumno.colegioNombre}
-                    onChangeText={(v) => setDatosNuevoAlumno({...datosNuevoAlumno, colegioNombre: v})}
+                    onChangeText={(v) => {
+                      setDatosNuevoAlumno({...datosNuevoAlumno, colegioNombre: v});
+                      buscarColegios(v);
+                    }}
                   />
+                  {buscandoColegios && <ActivityIndicator size="small" color={THEME.secondary} style={{ marginTop: -10, marginBottom: 10 }} />}
+                  {sugerenciasColegios.length > 0 && (
+                    <View style={styles.sugerenciasContainer}>
+                      {sugerenciasColegios.map((col, idx) => (
+                        <TouchableOpacity
+                          key={idx}
+                          style={styles.sugerenciaItem}
+                          onPress={() => {
+                            setDatosNuevoAlumno({...datosNuevoAlumno, colegioNombre: col.nombre_oficial || col.nombre || col});
+                            setSugerenciasColegios([]);
+                          }}
+                        >
+                          <Text style={styles.sugerenciaTexto}>{col.nombre_oficial || col.nombre || col}</Text>
+                        </TouchableOpacity>
+                      ))}
+                    </View>
+                  )}
 
                   <Text style={styles.labelField}>Direccion de recogida</Text>
                   <TextInput
@@ -2202,8 +2249,28 @@ export default function PantallaPadre({ navigation }) {
               <TextInput
                 style={styles.modalInput}
                 value={datosEdicionHijo.colegioNombre}
-                onChangeText={(v) => setDatosEdicionHijo({ ...datosEdicionHijo, colegioNombre: v })}
+                onChangeText={(v) => {
+                  setDatosEdicionHijo({ ...datosEdicionHijo, colegioNombre: v });
+                  buscarColegios(v);
+                }}
               />
+              {buscandoColegios && <ActivityIndicator size="small" color={THEME.secondary} style={{ marginTop: -10, marginBottom: 10 }} />}
+              {sugerenciasColegios.length > 0 && (
+                <View style={styles.sugerenciasContainer}>
+                  {sugerenciasColegios.map((col, idx) => (
+                    <TouchableOpacity
+                      key={idx}
+                      style={styles.sugerenciaItem}
+                      onPress={() => {
+                        setDatosEdicionHijo({ ...datosEdicionHijo, colegioNombre: col.nombre_oficial || col.nombre || col });
+                        setSugerenciasColegios([]);
+                      }}
+                    >
+                      <Text style={styles.sugerenciaTexto}>{col.nombre_oficial || col.nombre || col}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
 
               <Text style={styles.labelField}>Dirección de recogida</Text>
               <TextInput
@@ -3825,5 +3892,30 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 16,
     fontStyle: 'italic',
+  },
+  sugerenciasContainer: {
+    backgroundColor: THEME.surface,
+    borderWidth: 1,
+    borderColor: THEME.border,
+    borderRadius: 12,
+    marginTop: -12,
+    marginBottom: 16,
+    maxHeight: 150,
+    overflow: 'hidden',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  sugerenciaItem: {
+    padding: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: THEME.border,
+  },
+  sugerenciaTexto: {
+    fontSize: 13,
+    color: THEME.text,
+    fontWeight: '600',
   },
 });

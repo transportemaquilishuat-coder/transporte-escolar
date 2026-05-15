@@ -4,7 +4,7 @@ import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import { useState, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
-  ActivityIndicator, StatusBar, Modal, TextInput, Alert, Animated, Easing
+  ActivityIndicator, StatusBar, Modal, TextInput, Alert, Animated, Easing, PanResponder
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
@@ -160,6 +160,27 @@ export default function PantallaConductor({ navigation }) {
   const [distanciaDesvio, setDistanciaDesvio] = useState(0);
   const avisoAusentesAnim = useRef(new Animated.Value(0)).current;
   const alertasProximidadEnviadasRef = useRef(new Set());
+  const mapOverlayPosition = useRef(new Animated.ValueXY({ x: 0, y: 0 })).current;
+  const mapOverlayPanResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: (_, gestureState) =>
+        Math.abs(gestureState.dx) > 2 || Math.abs(gestureState.dy) > 2,
+      onPanResponderGrant: () => {
+        mapOverlayPosition.extractOffset();
+      },
+      onPanResponderMove: Animated.event(
+        [null, { dx: mapOverlayPosition.x, dy: mapOverlayPosition.y }],
+        { useNativeDriver: false }
+      ),
+      onPanResponderRelease: () => {
+        mapOverlayPosition.flattenOffset();
+      },
+      onPanResponderTerminate: () => {
+        mapOverlayPosition.flattenOffset();
+      },
+    })
+  ).current;
 
   useEffect(() => {
     const onConnect = () => setSocketConectado(true);
@@ -675,7 +696,7 @@ export default function PantallaConductor({ navigation }) {
             style={[styles.turnoBtn, turno === 'mañana' && styles.turnoBtnActivo]}
             onPress={() => setTurno('mañana')}
           >
-            <Clock size={14} color={turno === 'mañana' ? '#fff' : THEME.textSecondary} strokeWidth={2.5} />
+            <Clock size={12} color={turno === 'mañana' ? '#fff' : THEME.textSecondary} strokeWidth={2.5} />
             <Text style={[styles.turnoBtnTexto, turno === 'mañana' && styles.turnoBtnTextoActivo]}>
               Ruta matutina
             </Text>
@@ -684,7 +705,7 @@ export default function PantallaConductor({ navigation }) {
             style={[styles.turnoBtn, turno === 'tarde' && styles.turnoBtnActivo]}
             onPress={() => setTurno('tarde')}
           >
-            <Clock size={14} color={turno === 'tarde' ? '#fff' : THEME.textSecondary} strokeWidth={2.5} />
+            <Clock size={12} color={turno === 'tarde' ? '#fff' : THEME.textSecondary} strokeWidth={2.5} />
             <Text style={[styles.turnoBtnTexto, turno === 'tarde' && styles.turnoBtnTextoActivo]}>
               Ruta vespertina
             </Text>
@@ -698,7 +719,7 @@ export default function PantallaConductor({ navigation }) {
               style={[styles.tab, tabActiva === 'control' && styles.tabActiva]}
               onPress={() => setTabActiva('control')}
             >
-              <Activity size={14} color={tabActiva === 'control' ? '#fff' : THEME.textSecondary} strokeWidth={2} />
+              <Activity size={12} color={tabActiva === 'control' ? '#fff' : THEME.textSecondary} strokeWidth={2} />
               <Text style={[styles.tabTexto, tabActiva === 'control' && styles.tabTextoActivo]}>
                 Control
               </Text>
@@ -707,7 +728,7 @@ export default function PantallaConductor({ navigation }) {
               style={[styles.tab, tabActiva === 'mapa' && styles.tabActiva]}
               onPress={() => setTabActiva('mapa')}
             >
-              <MapPin size={14} color={tabActiva === 'mapa' ? '#fff' : THEME.textSecondary} strokeWidth={2} />
+              <MapPin size={12} color={tabActiva === 'mapa' ? '#fff' : THEME.textSecondary} strokeWidth={2} />
               <Text style={[styles.tabTexto, tabActiva === 'mapa' && styles.tabTextoActivo]}>
                 Mapa
               </Text>
@@ -716,7 +737,7 @@ export default function PantallaConductor({ navigation }) {
               style={[styles.tab, tabActiva === 'alumnos' && styles.tabActiva]}
               onPress={() => setTabActiva('alumnos')}
             >
-              <Users size={14} color={tabActiva === 'alumnos' ? '#fff' : THEME.textSecondary} strokeWidth={2} />
+              <Users size={12} color={tabActiva === 'alumnos' ? '#fff' : THEME.textSecondary} strokeWidth={2} />
               <Text style={[styles.tabTexto, tabActiva === 'alumnos' && styles.tabTextoActivo]}>
                 Alumnos
               </Text>
@@ -956,7 +977,13 @@ export default function PantallaConductor({ navigation }) {
                   ))}
                 </MapView>
                 
-                <View style={styles.mapOverlay}>
+                <Animated.View
+                  {...mapOverlayPanResponder.panHandlers}
+                  style={[
+                    styles.mapOverlay,
+                    { transform: mapOverlayPosition.getTranslateTransform() },
+                  ]}
+                >
                   <Text style={styles.mapOverlayTitulo}>Mapa de Recogida</Text>
                   <Text style={styles.mapOverlaySub}>Visualiza los puntos de recogida de tus alumnos.</Text>
                   
@@ -970,7 +997,7 @@ export default function PantallaConductor({ navigation }) {
                       <Text style={styles.leyendaTexto}>Abordado</Text>
                     </View>
                   </View>
-                </View>
+                </Animated.View>
 
                 <View style={styles.mapControlsOverlay}>
                   <View style={styles.botonesContainer}>
@@ -1349,8 +1376,8 @@ const styles = StyleSheet.create({
   // Header Compacto
   header: {
     backgroundColor: THEME.primaryDark,
-    paddingTop: 44,
-    paddingBottom: 16,
+    paddingTop: 30,
+    paddingBottom: 10,
     paddingHorizontal: 16,
   },
   headerContent: {
@@ -1365,29 +1392,29 @@ const styles = StyleSheet.create({
     borderRadius: 3,
   },
   bienvenida: {
-    fontSize: 11,
+    fontSize: 10,
     color: 'rgba(255,255,255,0.6)',
-    marginBottom: 2,
+    marginBottom: 1,
     fontWeight: '500',
     textTransform: 'uppercase',
     letterSpacing: 0.5,
   },
   nombreConductor: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: '700',
     color: '#fff',
-    marginBottom: 6,
+    marginBottom: 4,
   },
   brandCaption: {
-    fontSize: 11,
+    fontSize: 10,
     color: 'rgba(255,255,255,0.72)',
     fontWeight: '700',
-    marginBottom: 6,
+    marginBottom: 4,
   },
   rutaBadge: {
     backgroundColor: 'rgba(255,255,255,0.15)',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
     borderRadius: 12,
     alignSelf: 'flex-start',
     flexDirection: 'row',
@@ -1395,13 +1422,13 @@ const styles = StyleSheet.create({
     gap: 4,
   },
   rutaBadgeTexto: {
-    fontSize: 11,
+    fontSize: 10,
     color: '#fff',
     fontWeight: '600',
   },
   botonSalir: {
     backgroundColor: 'rgba(255,255,255,0.15)',
-    padding: 10,
+    padding: 8,
     borderRadius: 10,
     marginLeft: 12,
   },
@@ -1420,17 +1447,17 @@ const styles = StyleSheet.create({
   tabs: {
     flexDirection: 'row',
     paddingHorizontal: 16,
-    paddingVertical: 8,
-    gap: 8,
+    paddingVertical: 6,
+    gap: 6,
   },
   tab: {
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 6,
-    paddingVertical: 8,
-    paddingHorizontal: 12,
+    gap: 5,
+    paddingVertical: 6,
+    paddingHorizontal: 8,
     borderRadius: 8,
     backgroundColor: THEME.background,
   },
@@ -1438,7 +1465,7 @@ const styles = StyleSheet.create({
     backgroundColor: THEME.primary,
   },
   tabTexto: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '600',
     color: THEME.textSecondary,
   },
@@ -2198,16 +2225,19 @@ const styles = StyleSheet.create({
   },
   mapOverlay: {
     position: 'absolute',
-    top: 16,
-    left: 16,
-    right: 16,
-    backgroundColor: 'rgba(255,255,255,0.95)',
-    padding: 16,
-    borderRadius: 16,
+    top: 12,
+    left: 12,
+    maxWidth: 230,
+    backgroundColor: 'rgba(255,255,255,0.92)',
+    paddingVertical: 9,
+    paddingHorizontal: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(229,229,234,0.9)',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
+    shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.1,
-    shadowRadius: 10,
+    shadowRadius: 8,
     elevation: 5,
   },
   mapControlsOverlay: {
@@ -2233,20 +2263,20 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   mapOverlayTitulo: {
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: '800',
     color: THEME.text,
   },
   mapOverlaySub: {
-    fontSize: 11,
+    fontSize: 10,
     color: THEME.textSecondary,
     marginTop: 2,
     fontWeight: '500',
   },
   mapLeyenda: {
     flexDirection: 'row',
-    marginTop: 12,
-    gap: 16,
+    marginTop: 8,
+    gap: 10,
   },
   leyendaItem: {
     flexDirection: 'row',
@@ -2254,12 +2284,12 @@ const styles = StyleSheet.create({
     gap: 6,
   },
   leyendaPunto: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+    width: 7,
+    height: 7,
+    borderRadius: 3.5,
   },
   leyendaTexto: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: '700',
     color: THEME.text,
   },
@@ -2404,8 +2434,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     backgroundColor: THEME.surface,
     paddingHorizontal: 16,
-    paddingVertical: 10,
-    gap: 10,
+    paddingVertical: 6,
+    gap: 8,
     borderBottomWidth: 1,
     borderBottomColor: THEME.border,
   },
@@ -2414,9 +2444,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 8,
-    paddingVertical: 10,
-    borderRadius: 12,
+    gap: 6,
+    paddingVertical: 8,
+    borderRadius: 10,
     backgroundColor: THEME.background,
     borderWidth: 1,
     borderColor: THEME.border,
@@ -2426,7 +2456,7 @@ const styles = StyleSheet.create({
     borderColor: THEME.secondary,
   },
   turnoBtnTexto: {
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: '700',
     color: THEME.textSecondary,
   },

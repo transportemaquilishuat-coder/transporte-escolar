@@ -520,34 +520,33 @@ export default function PantallaPadre({ navigation }) {
   }, [hijos, hijoSeleccionadoId]);
 
   useEffect(() => {
-    const verificarHint = async () => {
-      const configurado = await AsyncStorage.getItem(`punto_configurado_${usuario?.id}`);
-      if (configurado === 'true') {
-        setMostrarPickupHint(false);
-      }
-    };
-    if (usuario?.id) verificarHint();
-  }, [usuario]);
+    const verificarConfiguracion = async () => {
+      if (!hijoSeleccionado) return;
 
-  useEffect(() => {
-    if (hijoSeleccionado) {
+      const configurado = await AsyncStorage.getItem(`punto_configurado_${hijoSeleccionado.id}`);
+      const estaConfigurado = configurado === 'true';
+
       if (hijoSeleccionado.latitude && hijoSeleccionado.longitude) {
         const coords = {
           latitude: Number(hijoSeleccionado.latitude),
           longitude: Number(hijoSeleccionado.longitude)
         };
         setPuntoRecogida(coords);
-        setPuntoRecogidaBloqueado(true);
-        setMostrarPickupHint(false);
+        // Solo bloqueamos si el usuario ya lo confirmó explícitamente en el mapa anteriormente
+        setPuntoRecogidaBloqueado(estaConfigurado);
+        setMostrarPickupHint(!estaConfigurado);
         setPuntoSugeridoPorDireccion(false);
       } else {
         setPuntoRecogidaBloqueado(false);
+        setMostrarPickupHint(true);
         obtenerDireccionParaSugerencia(hijoSeleccionado).then(direccion => {
           sugerirPuntoDesdeDireccion(direccion);
         });
       }
       setTelefonoConductor(hijoSeleccionado.conductorTelefono || '70000002');
-    }
+    };
+
+    verificarConfiguracion();
   }, [hijoSeleccionadoId, hijos]);
 
   // ── Bottom Sheet PanResponder ──────────────────────────────
@@ -1136,8 +1135,13 @@ export default function PantallaPadre({ navigation }) {
       setMostrarPickupHint(false);
       setPuntoSugeridoPorDireccion(false);
       
-      // Persistir que ya se configuró el punto para no mostrar el anuncio de nuevo
-      await AsyncStorage.setItem(`punto_configurado_${usuario?.id}`, 'true');
+      // Persistir que ya se configuró el punto para este hijo (y otros si aplica)
+      if (aplicarATodos) {
+        const promesas = hijos.map(h => AsyncStorage.setItem(`punto_configurado_${h.id}`, 'true'));
+        await Promise.all(promesas);
+      } else {
+        await AsyncStorage.setItem(`punto_configurado_${hijoSeleccionado.id}`, 'true');
+      }
 
       // Actualizar localmente
       if (aplicarATodos) {
@@ -1248,12 +1252,6 @@ export default function PantallaPadre({ navigation }) {
                     </TouchableOpacity>
                   ))}
                 </ScrollView>
-                <TouchableOpacity
-                  style={styles.btnAddHijoSubtle}
-                  onPress={() => abrirModalVincularHijo()}
-                >
-                  <Plus size={18} color="rgba(255,255,255,0.8)" strokeWidth={2.5} />
-                </TouchableOpacity>
               </View>
             ) : null}
 
@@ -1329,20 +1327,6 @@ export default function PantallaPadre({ navigation }) {
               <Text style={styles.childNoRouteTitle}>Ruta no asignada</Text>
               <Text style={styles.childNoRouteDesc} numberOfLines={2}>
                 {hijoSeleccionado.nombre.split(' ')[0]} no tiene bus. Usa el código del conductor arriba.
-              </Text>
-            </View>
-          </View>
-        )}
-
-        {hijoSeleccionado && hijoSeleccionado.rutaId && (!hijoSeleccionado.latitude || !hijoSeleccionado.longitude) && !cargandoHijos && (
-          <View style={[styles.childNoRouteOverlay, { backgroundColor: 'rgba(239, 246, 255, 0.95)', borderColor: '#3B82F6' }]}>
-            <View style={[styles.childNoRouteIcon, { backgroundColor: '#3B82F6' }]}>
-              <MapPin size={18} color="#fff" />
-            </View>
-            <View style={styles.childNoRouteText}>
-              <Text style={[styles.childNoRouteTitle, { color: '#1E40AF' }]}>Configurar recogida</Text>
-              <Text style={[styles.childNoRouteDesc, { color: '#1E40AF' }]} numberOfLines={2}>
-                Por favor, mantén presionado el mapa para indicar dónde debemos recoger a {hijoSeleccionado.nombre.split(' ')[0]}.
               </Text>
             </View>
           </View>

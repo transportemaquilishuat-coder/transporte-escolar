@@ -118,7 +118,7 @@ export default function PantallaConductor({ navigation }) {
   const [modalColegioVisible, setModalColegioVisible] = useState(false);
   const [codigoColegio, setCodigoColegio] = useState('');
   const [loadingVincular, setLoadingVincular] = useState(false);
-  const alturaMapaConductor = Math.max(500, Math.min(620, windowHeight - 180));
+  const alturaMapaConductor = Math.max(430, Math.min(640, windowHeight - 165));
 
   // ... (dentro de las funciones)
   const handleVincularColegio = async () => {
@@ -938,16 +938,11 @@ export default function PantallaConductor({ navigation }) {
             </View>
           ) : tabActiva === 'mapa' ? (
             // ========== TAB DE MAPA DE RECOGIDA ==========
-            <View style={styles.tabContent}>
+            <View style={[styles.tabContent, styles.mapaTabContent]}>
               <View style={[styles.mapContainer, { height: alturaMapaConductor }]}>
                 <MapView
                   provider={PROVIDER_GOOGLE}
                   style={styles.map}
-                  scrollEnabled={false}
-                  zoomEnabled={false}
-                  rotateEnabled={false}
-                  pitchEnabled={false}
-                  toolbarEnabled={false}
                   initialRegion={{
                     latitude: ubicacion?.latitude || 13.68935,
                     longitude: ubicacion?.longitude || -89.18718,
@@ -1371,6 +1366,7 @@ const styles = StyleSheet.create({
   contenido: { flex: 1 },
   contentContainer: { paddingBottom: 30 },
   tabContent: { padding: 16 },
+  mapaTabContent: { padding: 0 },
   alertaDesvio: {
     flexDirection: 'row', alignItems: 'center', gap: 12,
     backgroundColor: '#FEF3C7', marginHorizontal: 16,
@@ -2199,10 +2195,9 @@ const styles = StyleSheet.create({
   },
   mapContainer: {
     height: 620,
-    borderRadius: 20,
+    borderRadius: 0,
     overflow: 'hidden',
-    borderWidth: 1,
-    borderColor: THEME.border,
+    borderWidth: 0,
     backgroundColor: '#fff',
   },
   map: {
@@ -2252,7 +2247,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 12,
     right: 12,
-    bottom: 12,
+    bottom: 34,
     backgroundColor: 'rgba(255,255,255,0.96)',
     padding: 10,
     borderRadius: 12,

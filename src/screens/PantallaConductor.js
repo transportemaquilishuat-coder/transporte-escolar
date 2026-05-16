@@ -4,7 +4,7 @@ import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
 import { useState, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
-  ActivityIndicator, StatusBar, Modal, TextInput, Alert, Animated, Easing, PanResponder
+  ActivityIndicator, StatusBar, Modal, TextInput, Alert, Animated, Easing, PanResponder, useWindowDimensions
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
@@ -86,6 +86,7 @@ const obtenerAuthHeaders = async () => {
 
 export default function PantallaConductor({ navigation }) {
   const { branding } = useBranding();
+  const { height: windowHeight } = useWindowDimensions();
   useKeepAwake();
 
   // ========== ESTADOS ==========
@@ -117,6 +118,7 @@ export default function PantallaConductor({ navigation }) {
   const [modalColegioVisible, setModalColegioVisible] = useState(false);
   const [codigoColegio, setCodigoColegio] = useState('');
   const [loadingVincular, setLoadingVincular] = useState(false);
+  const alturaMapaConductor = Math.max(500, Math.min(620, windowHeight - 180));
 
   // ... (dentro de las funciones)
   const handleVincularColegio = async () => {
@@ -749,6 +751,7 @@ export default function PantallaConductor({ navigation }) {
         <ScrollView
           style={styles.contenido}
           showsVerticalScrollIndicator={false}
+          scrollEnabled={tabActiva !== 'mapa'}
           contentContainerStyle={styles.contentContainer}
         >
           {tabActiva === 'control' ? (
@@ -936,10 +939,15 @@ export default function PantallaConductor({ navigation }) {
           ) : tabActiva === 'mapa' ? (
             // ========== TAB DE MAPA DE RECOGIDA ==========
             <View style={styles.tabContent}>
-              <View style={styles.mapContainer}>
+              <View style={[styles.mapContainer, { height: alturaMapaConductor }]}>
                 <MapView
                   provider={PROVIDER_GOOGLE}
                   style={styles.map}
+                  scrollEnabled={false}
+                  zoomEnabled={false}
+                  rotateEnabled={false}
+                  pitchEnabled={false}
+                  toolbarEnabled={false}
                   initialRegion={{
                     latitude: ubicacion?.latitude || 13.68935,
                     longitude: ubicacion?.longitude || -89.18718,
@@ -1006,7 +1014,7 @@ export default function PantallaConductor({ navigation }) {
                       onPress={iniciarRuta}
                       disabled={rutaActiva}
                     >
-                      <Play size={16} color="#fff" strokeWidth={2.5} fill="#fff" />
+                      <Play size={13} color="#fff" strokeWidth={2.5} fill="#fff" />
                       <Text style={styles.btnIniciarTexto}>Iniciar</Text>
                     </TouchableOpacity>
                     <TouchableOpacity
@@ -1014,7 +1022,7 @@ export default function PantallaConductor({ navigation }) {
                       onPress={finalizarRuta}
                       disabled={!rutaActiva}
                     >
-                      <Square size={16} color="#fff" strokeWidth={2.5} fill="#fff" />
+                      <Square size={13} color="#fff" strokeWidth={2.5} fill="#fff" />
                       <Text style={styles.btnFinalizarTexto}>Finalizar</Text>
                     </TouchableOpacity>
                   </View>
@@ -1576,38 +1584,38 @@ const styles = StyleSheet.create({
   // Botones
   botonesContainer: {
     flexDirection: 'row',
-    gap: 10,
-    marginBottom: 10,
+    gap: 8,
+    marginBottom: 8,
   },
   btnIniciar: {
     flex: 1,
     backgroundColor: THEME.success,
-    borderRadius: 12,
-    paddingVertical: 14,
+    borderRadius: 10,
+    paddingVertical: 9,
     alignItems: 'center',
     flexDirection: 'row',
     justifyContent: 'center',
-    gap: 6,
+    gap: 5,
   },
   btnIniciarTexto: {
     color: '#fff',
     fontWeight: '700',
-    fontSize: 14,
+    fontSize: 12,
   },
   btnFinalizar: {
     flex: 1,
     backgroundColor: THEME.error,
-    borderRadius: 12,
-    paddingVertical: 14,
+    borderRadius: 10,
+    paddingVertical: 9,
     alignItems: 'center',
     flexDirection: 'row',
     justifyContent: 'center',
-    gap: 6,
+    gap: 5,
   },
   btnFinalizarTexto: {
     color: '#fff',
     fontWeight: '700',
-    fontSize: 14,
+    fontSize: 12,
   },
   btnDeshabilitado: {
     opacity: 0.4,
@@ -1841,22 +1849,22 @@ const styles = StyleSheet.create({
   },
   eventosScroll: {
     flexGrow: 0,
-    marginBottom: 6,
+    marginBottom: 2,
   },
   eventosGrid: {
     flexDirection: 'row',
-    gap: 8,
+    gap: 6,
   },
   eventoBtn: {
     backgroundColor: THEME.surface,
-    borderRadius: 20,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
+    borderRadius: 16,
+    paddingHorizontal: 11,
+    paddingVertical: 6,
     borderWidth: 1,
     borderColor: THEME.border,
   },
   eventoBtnTexto: {
-    fontSize: 12,
+    fontSize: 11,
     color: THEME.text,
     fontWeight: '600',
   },
@@ -2242,12 +2250,12 @@ const styles = StyleSheet.create({
   },
   mapControlsOverlay: {
     position: 'absolute',
-    left: 16,
-    right: 16,
-    bottom: 16,
+    left: 12,
+    right: 12,
+    bottom: 12,
     backgroundColor: 'rgba(255,255,255,0.96)',
-    padding: 14,
-    borderRadius: 16,
+    padding: 10,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: THEME.border,
     shadowColor: '#000',
@@ -2257,10 +2265,10 @@ const styles = StyleSheet.create({
     elevation: 5,
   },
   mapControlsTitle: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '800',
     color: THEME.text,
-    marginBottom: 8,
+    marginBottom: 6,
   },
   mapOverlayTitulo: {
     fontSize: 12,

@@ -3461,7 +3461,7 @@ const styles = StyleSheet.create({
     padding: 0,
     justifyContent: 'center',
     top: 64,
-    left: 76,
+    left: 14,
   },
   bannerVinculacionIconoSolo: {
     flex: 1,

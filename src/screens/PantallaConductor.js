@@ -1886,32 +1886,32 @@ const styles = StyleSheet.create({
   btnIniciar: {
     flex: 1,
     backgroundColor: THEME.success,
-    borderRadius: 10,
-    paddingVertical: 9,
+    borderRadius: 12,
+    paddingVertical: 14, // Aumentado para mejor manipulación
     alignItems: 'center',
     flexDirection: 'row',
     justifyContent: 'center',
-    gap: 5,
+    gap: 8,
   },
   btnIniciarTexto: {
     color: '#fff',
-    fontWeight: '700',
-    fontSize: 12,
+    fontWeight: '800',
+    fontSize: 14, // Texto más legible
   },
   btnFinalizar: {
     flex: 1,
     backgroundColor: THEME.error,
-    borderRadius: 10,
-    paddingVertical: 9,
+    borderRadius: 12,
+    paddingVertical: 14, // Aumentado
     alignItems: 'center',
     flexDirection: 'row',
     justifyContent: 'center',
-    gap: 5,
+    gap: 8,
   },
   btnFinalizarTexto: {
     color: '#fff',
-    fontWeight: '700',
-    fontSize: 12,
+    fontWeight: '800',
+    fontSize: 14, // Texto más legible
   },
   btnDeshabilitado: {
     opacity: 0.4,
@@ -2149,20 +2149,20 @@ const styles = StyleSheet.create({
   },
   eventosGrid: {
     flexDirection: 'row',
-    gap: 6,
+    gap: 8,
   },
   eventoBtn: {
     backgroundColor: THEME.surface,
-    borderRadius: 16,
-    paddingHorizontal: 11,
-    paddingVertical: 6,
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 10, // Aumentado para mejor tacto
     borderWidth: 1,
     borderColor: THEME.border,
   },
   eventoBtnTexto: {
-    fontSize: 11,
+    fontSize: 12,
     color: THEME.text,
-    fontWeight: '600',
+    fontWeight: '700',
   },
 
   // Bitácora
@@ -2547,23 +2547,25 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 12,
     right: 12,
-    bottom: 34,
-    backgroundColor: 'rgba(255,255,255,0.96)',
-    padding: 10,
-    borderRadius: 12,
+    bottom: 70, // Levantado para evitar la barra de navegación y mejorar acceso
+    backgroundColor: 'rgba(255,255,255,0.98)',
+    padding: 12,
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: THEME.border,
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 10,
-    elevation: 5,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 8,
   },
   mapControlsTitle: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: '800',
     color: THEME.text,
-    marginBottom: 6,
+    marginBottom: 8,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   mapOverlayTitulo: {
     fontSize: 12,

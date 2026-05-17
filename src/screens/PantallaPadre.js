@@ -159,6 +159,8 @@ export default function PantallaPadre({ navigation }) {
     colegioNombre: '',
     direccion: '',
     turno_estudio: 'matutino',
+    fecha_inicio: new Date().toISOString().split('T')[0],
+    mismo_punto: true,
   });
 
   // Edicion de hijo
@@ -360,6 +362,8 @@ export default function PantallaPadre({ navigation }) {
     colegioNombre: '',
     direccion: obtenerDireccionTexto(usuario),
     turno_estudio: 'matutino',
+    fecha_inicio: new Date().toISOString().split('T')[0],
+    mismo_punto: true,
   });
 
   const abrirModalVincularHijo = ({ requiereDatosAlumno = false } = {}) => {
@@ -995,6 +999,7 @@ export default function PantallaPadre({ navigation }) {
             direccion: direccionAlumno,
             codigoConductor: codigoVinculacion.trim().toUpperCase(),
             turno_estudio: datosNuevoAlumno.turno_estudio,
+            fecha_inicio: datosNuevoAlumno.fecha_inicio,
           },
           alumno: {
             nombre: datosNuevoAlumno.nombre.trim(),
@@ -1004,6 +1009,7 @@ export default function PantallaPadre({ navigation }) {
             parada: direccionAlumno,
             turno_estudio: datosNuevoAlumno.turno_estudio,
             turnoEstudio: datosNuevoAlumno.turno_estudio,
+            fecha_inicio: datosNuevoAlumno.fecha_inicio,
           }
         } : {})
       };
@@ -1016,15 +1022,35 @@ export default function PantallaPadre({ navigation }) {
 
       const datos = await res.json();
 
-      // Si el backend indica que falta info del alumno, abrimos el formulario
-      if (res.status === 400 && (datos.error?.includes('informacion') || datos.infoMissing)) {
-        setMostrarFormAlumno(true);
-        Alert.alert('Datos requeridos', 'El conductor solicita los datos del estudiante para completar la vinculación. Por favor llena el formulario.');
-        setLoadingVincular(false);
-        return;
+      if (!res.ok) {
+        if (res.status === 400 && (datos.error?.includes('informacion') || datos.infoMissing)) {
+          setMostrarFormAlumno(true);
+          Alert.alert('Datos requeridos', 'El conductor solicita los datos del estudiante para completar la vinculación.');
+          setLoadingVincular(false);
+          return;
+        }
+        throw new Error(datos.error || 'No se pudo completar la vinculación');
       }
 
-      if (!res.ok) throw new Error(datos.error || 'No se pudo completar la vinculación');
+      // SI SE VINCULÓ ÉXITOSAMENTE Y SE PIDIÓ EL MISMO PUNTO
+      if (debeEnviarDatosAlumno && datosNuevoAlumno.mismo_punto && hijos.length > 0) {
+        const otroHijoConPunto = hijos.find(h => h.latitude && h.longitude);
+        if (otroHijoConPunto && datos.alumnoId) {
+          try {
+            await fetch(`${SERVIDOR}/api/padres/hijos/${datos.alumnoId}/punto-recogida`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json', ...(await obtenerAuthHeaders()) },
+              body: JSON.stringify({
+                parada: otroHijoConPunto.parada || `Punto ${Number(otroHijoConPunto.latitude).toFixed(5)}`,
+                latitude: Number(otroHijoConPunto.latitude),
+                longitude: Number(otroHijoConPunto.longitude),
+              }),
+            });
+          } catch (e) {
+            console.log('Error copiando punto:', e);
+          }
+        }
+      }
 
       setModalVincular(false);
       setCodigoVinculacion('');
@@ -2067,21 +2093,22 @@ export default function PantallaPadre({ navigation }) {
 
               {/* OPCIÓN PARA AGREGAR DATOS DEL ALUMNO SI ES NUEVO */}
               <TouchableOpacity 
-                style={[styles.btnToggleForm, hijos.length === 0 && styles.btnToggleFormBloqueado]}
+                style={[styles.btnToggleForm, (hijos.length === 0 || hijos.length > 0) && styles.btnToggleFormBloqueado]}
                 onPress={() => {
+                  // Permitir ocultar solo si no es obligatorio
                   if (hijos.length === 0) return;
                   setMostrarFormAlumno(!mostrarFormAlumno);
                 }}
               >
                 <Text style={styles.btnToggleFormTexto}>
                   {hijos.length === 0
-                    ? "Datos del estudiante pendientes"
-                    : mostrarFormAlumno ? "- Ocultar datos del estudiante" : "+ Agregar datos del estudiante (Si es nuevo)"}
+                    ? "Datos del estudiante requeridos"
+                    : "Información del nuevo hijo"}
                 </Text>
               </TouchableOpacity>
 
-              {mostrarFormAlumno && (
-                <Animated.View style={styles.formAlumnoContainer}>
+              {(mostrarFormAlumno || hijos.length > 0) && (
+                <View style={styles.formAlumnoContainer}>
                   <Text style={styles.labelField}>Nombre completo del hijo</Text>
                   <TextInput
                     style={styles.modalInput}
@@ -2126,16 +2153,21 @@ export default function PantallaPadre({ navigation }) {
                     </View>
                   )}
 
-                  <Text style={styles.labelField}>Direccion de recogida</Text>
+                  <Text style={styles.labelField}>Fecha inicio de servicio</Text>
+                  <TextInput
+                    style={styles.modalInput}
+                    placeholder="AAAA-MM-DD"
+                    value={datosNuevoAlumno.fecha_inicio}
+                    onChangeText={(v) => setDatosNuevoAlumno({...datosNuevoAlumno, fecha_inicio: v})}
+                  />
+
+                  <Text style={styles.labelField}>Direccion de residencia</Text>
                   <TextInput
                     style={styles.modalInput}
                     placeholder="Direccion de referencia"
                     value={datosNuevoAlumno.direccion}
                     onChangeText={(v) => setDatosNuevoAlumno({...datosNuevoAlumno, direccion: v})}
                   />
-                  <Text style={styles.campoAyudaTexto}>
-                    Despues podras ubicar el punto exacto en el mapa.
-                  </Text>
 
                   <Text style={styles.labelField}>Turno de estudio</Text>
                   <View style={styles.tipoSelector}>
@@ -2151,7 +2183,29 @@ export default function PantallaPadre({ navigation }) {
                       </TouchableOpacity>
                     ))}
                   </View>
-                </Animated.View>
+
+                  {hijos.length > 0 && (
+                    <View style={styles.mismoPuntoContainer}>
+                      <Text style={styles.labelField}>¿Mismo punto de recogida?</Text>
+                      <View style={styles.tipoSelector}>
+                        {[
+                          { label: 'Sí, igual que hermanos', value: true },
+                          { label: 'No, punto diferente', value: false }
+                        ].map((opt) => (
+                          <TouchableOpacity
+                            key={opt.label}
+                            style={[styles.tipoOption, datosNuevoAlumno.mismo_punto === opt.value && styles.tipoOptionActiva]}
+                            onPress={() => setDatosNuevoAlumno({ ...datosNuevoAlumno, mismo_punto: opt.value })}
+                          >
+                            <Text style={[styles.tipoOptionText, datosNuevoAlumno.mismo_punto === opt.value && styles.tipoOptionTextActivo]}>
+                              {opt.label}
+                            </Text>
+                          </TouchableOpacity>
+                        ))}
+                      </View>
+                    </View>
+                  )}
+                </View>
               )}
 
               <View style={styles.modalBotones}>
@@ -3485,6 +3539,12 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     borderWidth: 1,
     borderColor: 'rgba(0,122,255,0.1)',
+  },
+  mismoPuntoContainer: {
+    marginTop: 10,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(0,122,255,0.1)',
   },
   infoPadrePendiente: {
     backgroundColor: '#F8FAFC',

@@ -1202,7 +1202,10 @@ export default function PantallaPadre({ navigation }) {
         headers: { 'Content-Type': 'application/json', ...(await obtenerAuthHeaders()) },
         body: JSON.stringify(payload),
       });
-      if (!response.ok) {
+
+      const esPendiente = response.status === 202;
+
+      if (!response.ok && !esPendiente) {
         const errorData = await response.json().catch(() => ({}));
         if (esErrorAprobacionRuta(response.status, errorData)) {
           mostrarReglaAprobacionRuta();
@@ -1217,28 +1220,35 @@ export default function PantallaPadre({ navigation }) {
       setPuntoSugeridoPorDireccion(false);
       
       // Persistir que ya se configuró el punto para este hijo (y otros si aplica)
-      if (aplicarATodos) {
-        const promesas = hijos.flatMap(h => [
-          AsyncStorage.setItem(`punto_configurado_${h.id}`, 'true'),
-          AsyncStorage.setItem(`punto_configurado_${h.id}_coords`, JSON.stringify(coords)),
-        ]);
-        await Promise.all(promesas);
-      } else {
-        await AsyncStorage.setItem(`punto_configurado_${hijoSeleccionado.id}`, 'true');
-        await AsyncStorage.setItem(`punto_configurado_${hijoSeleccionado.id}_coords`, JSON.stringify(coords));
-      }
+      if (!esPendiente) {
+        if (aplicarATodos) {
+          const promesas = hijos.flatMap(h => [
+            AsyncStorage.setItem(`punto_configurado_${h.id}`, 'true'),
+            AsyncStorage.setItem(`punto_configurado_${h.id}_coords`, JSON.stringify(coords)),
+          ]);
+          await Promise.all(promesas);
+        } else {
+          await AsyncStorage.setItem(`punto_configurado_${hijoSeleccionado.id}`, 'true');
+          await AsyncStorage.setItem(`punto_configurado_${hijoSeleccionado.id}_coords`, JSON.stringify(coords));
+        }
 
-      // Actualizar localmente
-      if (aplicarATodos) {
-        setHijos(prev => prev.map(h => ({ ...h, latitude: coords.latitude, longitude: coords.longitude, parada })));
-      } else {
-        setHijos(prev => prev.map(h => h.id === hijoSeleccionado.id ? { ...h, latitude: coords.latitude, longitude: coords.longitude, parada } : h));
-      }
+        // Actualizar localmente
+        if (aplicarATodos) {
+          setHijos(prev => prev.map(h => ({ ...h, latitude: coords.latitude, longitude: coords.longitude, parada })));
+        } else {
+          setHijos(prev => prev.map(h => h.id === hijoSeleccionado.id ? { ...h, latitude: coords.latitude, longitude: coords.longitude, parada } : h));
+        }
 
-      Alert.alert(
-        '¡Listo!', 
-        'El punto de recogida y entrega ha sido establecido. Cualquier cambio futuro deberá ser autorizado por el conductor.'
-      );
+        Alert.alert(
+          '¡Listo!', 
+          'El punto de recogida y entrega ha sido establecido.'
+        );
+      } else {
+        Alert.alert(
+          'Solicitud enviada',
+          'El cambio de punto de recogida requiere autorización del conductor. Te notificaremos cuando sea aprobado.'
+        );
+      }
     } catch (e) {
       Alert.alert('Error', e.message || 'No se pudo guardar el punto.');
     } finally {

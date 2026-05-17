@@ -118,34 +118,92 @@ export default function PantallaConductor({ navigation }) {
   const [modalColegioVisible, setModalColegioVisible] = useState(false);
   const [codigoColegio, setCodigoColegio] = useState('');
   const [loadingVincular, setLoadingVincular] = useState(false);
+
+  // Alertas y Autorizaciones (NUEVO FLUJO)
+  const [ausenciasPendientes, setAusenciasPendientes] = useState([]);
+  const [programacionesPendientes, setProgramacionesPendientes] = useState([]);
+  const [solicitudesPendientes, setSolicitudesPendientes] = useState([]);
+  const [modalAlertasVisible, setModalAlertasVisible] = useState(false);
+  const [cargandoAlertas, setCargandoAlertas] = useState(false);
+
   const alturaMapaConductor = Math.max(430, Math.min(640, windowHeight - 165));
 
   // ... (dentro de las funciones)
-  const handleVincularColegio = async () => {
-    if (!codigoColegio.trim()) {
-      Alert.alert('Error', 'Ingresa el código del colegio.');
-      return;
-    }
-
-    setLoadingVincular(true);
+  const cargarAlertasPendientes = async () => {
+    setCargandoAlertas(true);
     try {
-      const res = await fetch(`${SERVIDOR}/api/vinculaciones/vincular-con-codigo`, {
+      const headers = await obtenerAuthHeaders();
+      const [resAus, resProg, resSol] = await Promise.all([
+        fetch(`${SERVIDOR}/api/conductor/ausencias-pendientes`, { headers }),
+        fetch(`${SERVIDOR}/api/conductor/programaciones-pendientes`, { headers }),
+        fetch(`${SERVIDOR}/api/conductor/solicitudes-pendientes`, { headers }) // Endpoint para cambios permanentes
+      ]);
+
+      const [aus, prog, sol] = await Promise.all([
+        resAus.json().catch(() => ({ ausencias: [] })),
+        resProg.json().catch(() => ({ programaciones: [] })),
+        resSol.json().catch(() => ({ solicitudes: [] }))
+      ]);
+
+      setAusenciasPendientes(aus.ausencias || []);
+      setProgramacionesPendientes(prog.programaciones || []);
+      setSolicitudesPendientes(sol.solicitudes || []);
+
+      return (aus.ausencias?.length || 0) + (prog.programaciones?.length || 0) + (sol.solicitudes?.length || 0);
+    } catch (e) {
+      console.log('Error cargando alertas:', e);
+      return 0;
+    } finally {
+      setCargandoAlertas(false);
+    }
+  };
+
+  const handleResponderAusencia = async (id, estado, respuesta = '') => {
+    try {
+      const res = await fetch(`${SERVIDOR}/api/conductor/ausencias/${id}/responder`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...(await obtenerAuthHeaders()) },
-        body: JSON.stringify({ codigo: codigoColegio.trim().toUpperCase() }),
+        body: JSON.stringify({ estado, respuesta_conductor: respuesta }),
       });
-
-      const datos = await res.json();
-      if (!res.ok) throw new Error(datos.error || 'No se pudo completar la vinculación');
-
-      setModalColegioVisible(false);
-      setCodigoColegio('');
-      Alert.alert('¡Éxito!', `Tu ruta y alumnos han sido vinculados correctamente. ${datos.desc || ''}`);
-      // Recargar datos si es necesario
+      if (res.ok) {
+        setAusenciasPendientes(prev => prev.filter(a => a.id !== id));
+        cargarAlumnos(); // Refrescar lista para filtrar si fue autorizado
+      }
     } catch (e) {
-      Alert.alert('Error', e.message || 'No se pudo vincular al colegio.');
-    } finally {
-      setLoadingVincular(false);
+      Alert.alert('Error', 'No se pudo responder a la ausencia.');
+    }
+  };
+
+  const handleResponderProgramacion = async (id, estado, respuesta = '') => {
+    try {
+      const res = await fetch(`${SERVIDOR}/api/conductor/programaciones/${id}/responder`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(await obtenerAuthHeaders()) },
+        body: JSON.stringify({ estado, respuesta_conductor: respuesta }),
+      });
+      if (res.ok) {
+        setProgramacionesPendientes(prev => prev.filter(p => p.id !== id));
+        cargarAlumnos();
+      }
+    } catch (e) {
+      Alert.alert('Error', 'No se pudo responder al cambio temporal.');
+    }
+  };
+
+  const handleResponderSolicitud = async (id, estado, respuesta = '') => {
+    try {
+      // Usar endpoint existente para cambios permanentes
+      const res = await fetch(`${SERVIDOR}/api/conductor/solicitudes/${id}/responder`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(await obtenerAuthHeaders()) },
+        body: JSON.stringify({ estado, respuesta_conductor: respuesta }),
+      });
+      if (res.ok) {
+        setSolicitudesPendientes(prev => prev.filter(s => s.id !== id));
+        cargarAlumnos();
+      }
+    } catch (e) {
+      Alert.alert('Error', 'No se pudo responder a la solicitud.');
     }
   };
   const [loadingGestion, setLoadingGestion] = useState(false);
@@ -222,9 +280,15 @@ export default function PantallaConductor({ navigation }) {
     if (!conductorId) return undefined;
 
     cargarAlumnos();
+    cargarAlertasPendientes();
     solicitarPermisos();
+
+    // Polling de alertas cada 30 segundos
+    const alertaInterval = setInterval(cargarAlertasPendientes, 30000);
+
     return () => {
       if (intervaloRef.current) clearInterval(intervaloRef.current);
+      clearInterval(alertaInterval);
     };
   }, [conductorId]);
 
@@ -759,13 +823,32 @@ export default function PantallaConductor({ navigation }) {
             <View style={styles.tabContent}>
               {/* ESTADO DE RUTA */}
               <View style={styles.tarjetaEstado}>
-                <View style={styles.estadoHeader}>
-                  <View style={[styles.estadoIndicador, { backgroundColor: rutaActiva ? THEME.success : THEME.warning }]} />
-                  <Text style={styles.estadoTexto}>{rutaActiva ? 'Ruta en curso' : 'Ruta detenida'}</Text>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <View>
+                    <View style={styles.estadoHeader}>
+                      <View style={[styles.estadoIndicador, { backgroundColor: rutaActiva ? THEME.success : THEME.warning }]} />
+                      <Text style={styles.estadoTexto}>{rutaActiva ? 'Ruta en curso' : 'Ruta detenida'}</Text>
+                    </View>
+                    <Text style={styles.estadoDescripcion}>
+                      {rutaActiva ? 'Continúa con tu recorrido habitual' : 'Inicia la ruta para comenzar'}
+                    </Text>
+                  </View>
+
+                  {/* INDICADOR DE ALERTAS PENDIENTES */}
+                  {(ausenciasPendientes.length > 0 || programacionesPendientes.length > 0 || solicitudesPendientes.length > 0) && (
+                    <TouchableOpacity 
+                      style={styles.btnAlertasNotif}
+                      onPress={() => setModalAlertasVisible(true)}
+                    >
+                      <AlertCircle size={20} color="#fff" strokeWidth={2.5} />
+                      <View style={styles.badgeAlertaCount}>
+                        <Text style={styles.badgeAlertaCountTexto}>
+                          {ausenciasPendientes.length + programacionesPendientes.length + solicitudesPendientes.length}
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+                  )}
                 </View>
-                <Text style={styles.estadoDescripcion}>
-                  {rutaActiva ? 'Continúa con tu recorrido habitual' : 'Inicia la ruta para comenzar'}
-                </Text>
               </View>
 
               {desvioActivo && (
@@ -1356,6 +1439,125 @@ export default function PantallaConductor({ navigation }) {
             </View>
           </View>
         </Modal>
+
+        {/* MODAL DE ALERTAS Y AUTORIZACIONES */}
+        <Modal
+          visible={modalAlertasVisible}
+          animationType="slide"
+          transparent={true}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={[styles.modalContainer, { height: '80%' }]}>
+              <View style={styles.modalHeader}>
+                <View>
+                  <Text style={styles.modalTitulo}>Alertas y Solicitudes</Text>
+                  <Text style={styles.modalSubtitulo}>Autoriza cambios de ruta y ausencias.</Text>
+                </View>
+                <TouchableOpacity onPress={() => setModalAlertasVisible(false)} style={styles.modalCloseBtn}>
+                  <X size={24} color={THEME.textSecondary} strokeWidth={2} />
+                </TouchableOpacity>
+              </View>
+
+              <ScrollView showsVerticalScrollIndicator={false}>
+                {cargandoAlertas ? (
+                  <ActivityIndicator color={THEME.secondary} style={{ marginTop: 20 }} />
+                ) : (ausenciasPendientes.length === 0 && programacionesPendientes.length === 0 && solicitudesPendientes.length === 0) ? (
+                  <View style={styles.emptyState}>
+                    <Check size={48} color={THEME.success} strokeWidth={1.5} />
+                    <Text style={styles.emptyStateTitulo}>Todo al día</Text>
+                    <Text style={styles.emptyStateSub}>No tienes solicitudes pendientes de aprobación.</Text>
+                  </View>
+                ) : (
+                  <>
+                    {/* SOLICITUDES PERMANENTES (CAMBIOS DE DIRECCIÓN) */}
+                    {solicitudesPendientes.map((sol) => (
+                      <View key={`sol-${sol.id}`} style={styles.alertaItemCard}>
+                        <View style={[styles.alertaIconBadge, { backgroundColor: '#EEF2FF' }]}>
+                          <MapPin size={20} color={THEME.secondary} />
+                        </View>
+                        <View style={styles.alertaContent}>
+                          <Text style={styles.alertaHijo}>{sol.hijo_nombre}</Text>
+                          <Text style={styles.alertaTipo}>Cambio permanente de punto</Text>
+                          <Text style={styles.alertaDetalle}>Nueva parada: {sol.nueva_parada || 'Ubicación en mapa'}</Text>
+                        </View>
+                        <View style={styles.alertaAcciones}>
+                          <TouchableOpacity 
+                            style={styles.btnAlertaRechazar}
+                            onPress={() => handleResponderSolicitud(sol.id, 'rechazado')}
+                          >
+                            <X size={18} color={THEME.error} />
+                          </TouchableOpacity>
+                          <TouchableOpacity 
+                            style={styles.btnAlertaAprobar}
+                            onPress={() => handleResponderSolicitud(sol.id, 'aprobado')}
+                          >
+                            <Check size={18} color={THEME.success} />
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    ))}
+
+                    {/* CAMBIOS TEMPORALES */}
+                    {programacionesPendientes.map((prog) => (
+                      <View key={`prog-${prog.id}`} style={styles.alertaItemCard}>
+                        <View style={[styles.alertaIconBadge, { backgroundColor: '#FFF7ED' }]}>
+                          <Clock size={20} color={THEME.warning} />
+                        </View>
+                        <View style={styles.alertaContent}>
+                          <Text style={styles.alertaHijo}>{prog.hijo_nombre}</Text>
+                          <Text style={styles.alertaTipo}>Cambio temporal de ruta</Text>
+                          <Text style={styles.alertaDetalle}>Fecha: {prog.fecha}</Text>
+                        </View>
+                        <View style={styles.alertaAcciones}>
+                          <TouchableOpacity 
+                            style={styles.btnAlertaRechazar}
+                            onPress={() => handleResponderProgramacion(prog.id, 'rechazado')}
+                          >
+                            <X size={18} color={THEME.error} />
+                          </TouchableOpacity>
+                          <TouchableOpacity 
+                            style={styles.btnAlertaAprobar}
+                            onPress={() => handleResponderProgramacion(prog.id, 'aprobado')}
+                          >
+                            <Check size={18} color={THEME.success} />
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    ))}
+
+                    {/* AUSENCIAS */}
+                    {ausenciasPendientes.map((aus) => (
+                      <View key={`aus-${aus.id}`} style={styles.alertaItemCard}>
+                        <View style={[styles.alertaIconBadge, { backgroundColor: '#FEF2F2' }]}>
+                          <AlertCircle size={20} color={THEME.error} />
+                        </View>
+                        <View style={styles.alertaContent}>
+                          <Text style={styles.alertaHijo}>{aus.hijo_nombre}</Text>
+                          <Text style={styles.alertaTipo}>Reporte de ausencia</Text>
+                          <Text style={styles.alertaDetalle}>Motivo: {aus.motivo || 'No especificado'}</Text>
+                        </View>
+                        <View style={styles.alertaAcciones}>
+                          <TouchableOpacity 
+                            style={styles.btnAlertaRechazar}
+                            onPress={() => handleResponderAusencia(aus.id, 'rechazado')}
+                          >
+                            <X size={18} color={THEME.error} />
+                          </TouchableOpacity>
+                          <TouchableOpacity 
+                            style={styles.btnAlertaAprobar}
+                            onPress={() => handleResponderAusencia(aus.id, 'autorizado')}
+                          >
+                            <Check size={18} color={THEME.success} />
+                          </TouchableOpacity>
+                        </View>
+                      </View>
+                    ))}
+                  </>
+                )}
+              </ScrollView>
+            </View>
+          </View>
+        </Modal>
       </View>
     </>
   );
@@ -1376,6 +1578,104 @@ const styles = StyleSheet.create({
   alertaDesvioIcono: { fontSize: 24 },
   alertaDesvioTitulo: { fontSize: 14, fontWeight: '700', color: '#92400E' },
   alertaDesvioSub: { fontSize: 12, color: '#78350F', marginTop: 2 },
+
+  // Alertas Notificaciones
+  btnAlertasNotif: {
+    backgroundColor: THEME.secondary,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    justifyContent: 'center',
+    alignItems: 'center',
+    position: 'relative',
+    shadowColor: THEME.secondary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 5,
+  },
+  badgeAlertaCount: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    backgroundColor: THEME.error,
+    minWidth: 18,
+    height: 18,
+    borderRadius: 9,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#fff',
+    paddingHorizontal: 2,
+  },
+  badgeAlertaCountTexto: {
+    color: '#fff',
+    fontSize: 9,
+    fontWeight: '900',
+  },
+
+  // Alerta Items
+  alertaItemCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: THEME.surface,
+    borderRadius: 14,
+    padding: 12,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: THEME.border,
+  },
+  alertaIconBadge: {
+    width: 40,
+    height: 40,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  alertaContent: {
+    flex: 1,
+    gap: 2,
+  },
+  alertaHijo: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: THEME.text,
+  },
+  alertaTipo: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: THEME.textSecondary,
+  },
+  alertaDetalle: {
+    fontSize: 11,
+    color: THEME.textSecondary,
+    fontStyle: 'italic',
+  },
+  alertaAcciones: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  btnAlertaAprobar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#DCFCE7',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#86EFAC',
+  },
+  btnAlertaRechazar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#FEF2F2',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#FECACA',
+  },
 
   // Header Compacto
   header: {

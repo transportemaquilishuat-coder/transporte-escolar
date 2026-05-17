@@ -108,6 +108,7 @@ export default function PantallaPadre({ navigation }) {
   const avisoVozDadoRef = useRef(false);
   const vozActivadaRef = useRef(true);
   const sugerenciaDireccionIntentadaRef = useRef(false);
+  const hijosPromptedLocationRef = useRef(new Set());
 
   // ========== ESTADOS ==========
   const [socketConectado, setSocketConectado] = useState(socket.connected);
@@ -565,6 +566,32 @@ export default function PantallaPadre({ navigation }) {
         setMostrarPickupHint(!estaConfigurado);
         setPuntoSugeridoPorDireccion(false);
       } else {
+        // HIJO NO TIENE PUNTO DE RECOGIDA
+        // Verificar si otro hijo SI TIENE punto de recogida para sugerirlo (Solicitado por el usuario)
+        if (!hijosPromptedLocationRef.current.has(hijoSeleccionado.id)) {
+          const otroHijoConPunto = hijos.find(h => h.id !== hijoSeleccionado.id && h.latitude && h.longitude);
+          if (otroHijoConPunto) {
+            hijosPromptedLocationRef.current.add(hijoSeleccionado.id);
+            Alert.alert(
+              'Punto de recogida',
+              `Tu hijo ${otroHijoConPunto.nombre.split(' ')[0]} ya tiene un punto de recogida definido. ¿Deseas usar el mismo para ${hijoSeleccionado.nombre.split(' ')[0]}?`,
+              [
+                { text: 'No, definir otro', style: 'cancel' },
+                { 
+                  text: 'Sí, usar el mismo', 
+                  onPress: () => {
+                    const coords = { 
+                      latitude: Number(otroHijoConPunto.latitude), 
+                      longitude: Number(otroHijoConPunto.longitude) 
+                    };
+                    guardarPuntoRecogida(coords, false); // Solo para este hijo
+                  }
+                }
+              ]
+            );
+          }
+        }
+
         setPuntoRecogidaBloqueado(false);
         setMostrarPickupHint(true);
         obtenerDireccionParaSugerencia(hijoSeleccionado).then(direccion => {
@@ -1549,6 +1576,23 @@ export default function PantallaPadre({ navigation }) {
           {/* Info */}
           {seccionSheet === 'info' && hijoSeleccionado && (
             <View>
+              {/* SUB-TABS PARA HIJOS (Solicitado por el usuario para visualizar otros hijos fácilmente) */}
+              {hijos.length > 1 && (
+                <View style={styles.subTabsContainer}>
+                  {hijos.map(h => (
+                    <TouchableOpacity
+                      key={h.id}
+                      onPress={() => setHijoSeleccionadoId(h.id)}
+                      style={[styles.subTab, hijoSeleccionadoId === h.id && styles.subTabActivo]}
+                    >
+                      <Text style={[styles.subTabTexto, hijoSeleccionadoId === h.id && styles.subTabTextoActivo]}>
+                        {h.nombre.split(' ')[0]}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              )}
+
               <View style={styles.fichaHeader}>
                 <View style={styles.fichaAvatar}>
                   <User size={22} color={THEME.secondary} strokeWidth={2} />
@@ -2826,6 +2870,40 @@ const styles = StyleSheet.create({
     width: 8,
     height: 8,
     borderRadius: 4,
+  },
+
+  // Sub-tabs para múltiples hijos
+  subTabsContainer: {
+    flexDirection: 'row',
+    marginBottom: 16,
+    backgroundColor: '#F2F2F7',
+    borderRadius: 12,
+    padding: 4,
+    borderWidth: 1,
+    borderColor: '#E5E5EA',
+  },
+  subTab: {
+    flex: 1,
+    paddingVertical: 10,
+    alignItems: 'center',
+    borderRadius: 10,
+  },
+  subTabActivo: {
+    backgroundColor: '#FFFFFF',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  subTabTexto: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#8E8E93',
+  },
+  subTabTextoActivo: {
+    color: '#3f3f41',
+    fontWeight: '700',
   },
 
   btnProbarVoz: {

@@ -128,28 +128,55 @@ export default function PantallaConductor({ navigation }) {
 
   const alturaMapaConductor = Math.max(430, Math.min(640, windowHeight - 165));
 
+  // Sockets para alertas en tiempo real (NUEVO)
+  useEffect(() => {
+    if (!socket) return;
+    
+    const manejarNuevaAlerta = () => {
+      cargarAlertasPendientes();
+      // Pequeña notificación visual si el conductor está en la app
+      agregarEvento('🔔 Nueva solicitud pendiente de revisión');
+    };
+
+    socket.on('parent:solicitud_cambio', manejarNuevaAlerta);
+    socket.on('parent:nueva_ausencia', manejarNuevaAlerta);
+    socket.on('parent:nueva_programacion', manejarNuevaAlerta);
+
+    return () => {
+      socket.off('parent:solicitud_cambio', manejarNuevaAlerta);
+      socket.off('parent:nueva_ausencia', manejarNuevaAlerta);
+      socket.off('parent:nueva_programacion', manejarNuevaAlerta);
+    };
+  }, []);
+
   // ... (dentro de las funciones)
   const cargarAlertasPendientes = async () => {
     setCargandoAlertas(true);
     try {
       const headers = await obtenerAuthHeaders();
+      
+      // Intentar cargar desde varios endpoints por compatibilidad con el backend
       const [resAus, resProg, resSol] = await Promise.all([
-        fetch(`${SERVIDOR}/api/conductor/ausencias-pendientes`, { headers }),
-        fetch(`${SERVIDOR}/api/conductor/programaciones-pendientes`, { headers }),
-        fetch(`${SERVIDOR}/api/conductor/solicitudes-pendientes`, { headers }) // Endpoint para cambios permanentes
+        fetch(`${SERVIDOR}/api/conductor/ausencias-pendientes`, { headers }).catch(() => null),
+        fetch(`${SERVIDOR}/api/conductor/programaciones-pendientes`, { headers }).catch(() => null),
+        fetch(`${SERVIDOR}/api/conductor/solicitudes-pendientes`, { headers }).catch(() => 
+          fetch(`${SERVIDOR}/api/conductor/solicitudes?estado=pendiente`, { headers }) // Fallback
+        )
       ]);
 
-      const [aus, prog, sol] = await Promise.all([
-        resAus.json().catch(() => ({ ausencias: [] })),
-        resProg.json().catch(() => ({ programaciones: [] })),
-        resSol.json().catch(() => ({ solicitudes: [] }))
-      ]);
+      const dataAus = resAus?.ok ? await resAus.json().catch(() => ({})) : {};
+      const dataProg = resProg?.ok ? await resProg.json().catch(() => ({})) : {};
+      const dataSol = resSol?.ok ? await resSol.json().catch(() => ({})) : {};
 
-      setAusenciasPendientes(aus.ausencias || []);
-      setProgramacionesPendientes(prog.programaciones || []);
-      setSolicitudesPendientes(sol.solicitudes || []);
+      const listaAusencias = dataAus.ausencias || dataAus.data || [];
+      const listaProgramaciones = dataProg.programaciones || dataProg.data || [];
+      const listaSolicitudes = dataSol.solicitudes || dataSol.data || dataSol.solicitudesPendientes || [];
 
-      return (aus.ausencias?.length || 0) + (prog.programaciones?.length || 0) + (sol.solicitudes?.length || 0);
+      setAusenciasPendientes(Array.isArray(listaAusencias) ? listaAusencias : []);
+      setProgramacionesPendientes(Array.isArray(listaProgramaciones) ? listaProgramaciones : []);
+      setSolicitudesPendientes(Array.isArray(listaSolicitudes) ? listaSolicitudes : []);
+
+      return (listaAusencias.length || 0) + (listaProgramaciones.length || 0) + (listaSolicitudes.length || 0);
     } catch (e) {
       console.log('Error cargando alertas:', e);
       return 0;

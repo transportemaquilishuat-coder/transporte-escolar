@@ -24,6 +24,8 @@ import {
   ArrowRight,
   Bus,
   Clock3,
+  Eye,
+  EyeOff,
   Lock,
   Mail,
   MapPin,
@@ -86,6 +88,7 @@ function LoginScreen({ navigation }) {
   const { branding, resetToFactoryBranding } = useBranding();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [mostrarPassword, setMostrarPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const { width } = useWindowDimensions();
@@ -409,11 +412,21 @@ function LoginScreen({ navigation }) {
                   placeholderTextColor={KIDGO_THEME.textSecondary}
                   value={password}
                   onChangeText={(t) => setPassword(t)}
-                  secureTextEntry
+                  secureTextEntry={!mostrarPassword}
                   editable={!loading}
                   textContentType="password"
                   autoComplete="password"
                 />
+                <TouchableOpacity
+                  onPress={() => setMostrarPassword(!mostrarPassword)}
+                  style={styles.btnMostrarPass}
+                >
+                  {mostrarPassword ? (
+                    <EyeOff size={18} color={KIDGO_THEME.textSecondary} strokeWidth={2} />
+                  ) : (
+                    <Eye size={18} color={KIDGO_THEME.textSecondary} strokeWidth={2} />
+                  )}
+                </TouchableOpacity>
               </View>
 
               {error ? (
@@ -834,6 +847,10 @@ const styles = StyleSheet.create({
     fontSize: 15,
     paddingVertical: 14,
     marginLeft: 10,
+  },
+  btnMostrarPass: {
+    padding: 8,
+    marginRight: -4,
   },
   errorBox: {
     backgroundColor: '#FEF2F2',

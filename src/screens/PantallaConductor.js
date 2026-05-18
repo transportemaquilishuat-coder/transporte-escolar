@@ -206,6 +206,43 @@ export default function PantallaConductor({ navigation }) {
       Alert.alert('Error', 'No se pudo responder a la solicitud.');
     }
   };
+
+  const handleVincularColegio = async () => {
+    if (!codigoColegio.trim()) {
+      Alert.alert('Error', 'Ingresa el código del colegio.');
+      return;
+    }
+
+    setLoadingVincular(true);
+    try {
+      const res = await fetch(`${SERVIDOR}/api/vinculaciones/vincular-con-codigo`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(await obtenerAuthHeaders()) },
+        body: JSON.stringify({ codigo: codigoColegio.trim().toUpperCase() }),
+      });
+
+      const datos = await res.json();
+      if (!res.ok) throw new Error(datos.error || 'No se pudo completar la vinculación');
+
+      setModalColegioVisible(false);
+      setCodigoColegio('');
+      Alert.alert('¡Éxito!', `Tu unidad ha sido vinculada correctamente al colegio.`);
+      
+      // Actualizar datos del usuario localmente para reflejar la vinculación
+      const usuarioActual = obtenerUsuario();
+      if (usuarioActual) {
+        const nuevoUsuario = { ...usuarioActual, colegioId: datos.colegioId, colegioNombre: datos.colegioNombre };
+        setUsuario(nuevoUsuario);
+        await AsyncStorage.setItem('usuario', JSON.stringify(nuevoUsuario));
+      }
+      
+      cargarAlumnos();
+    } catch (e) {
+      Alert.alert('Error', e.message || 'No se pudo vincular al colegio.');
+    } finally {
+      setLoadingVincular(false);
+    }
+  };
   const [loadingGestion, setLoadingGestion] = useState(false);
   const [mostrarAvisoAusentes, setMostrarAvisoAusentes] = useState(false);
   const [nuevoAlumno, setNuevoAlumno] = useState({
@@ -627,7 +664,8 @@ export default function PantallaConductor({ navigation }) {
         return;
       }
 
-      const response = await fetch(`${SERVIDOR}/api/asignaciones/conductor/${conductorId || CONDUCTOR_ID_DEMO}/alumnos`, {
+      // Endpoint unificado para inscripción directa (Soportado por el nuevo backend)
+      const response = await fetch(`${SERVIDOR}/api/asignaciones/conductor/${conductorId || CONDUCTOR_ID_DEMO}/inscribir-directo`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...(await obtenerAuthHeaders()) },
         body: JSON.stringify({
@@ -736,7 +774,20 @@ export default function PantallaConductor({ navigation }) {
               <Text style={styles.nombreConductor}>
                 {rutas.length > 0 ? rutas[0].conductor_nombre || 'Conductor' : 'Conductor'}
               </Text>
-              <Text style={styles.brandCaption}>{branding.appName || 'KidsGo!'}</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+                <Text style={styles.brandCaption}>{branding.appName || 'KidsGo!'}</Text>
+                {usuario?.colegioNombre ? (
+                  <View style={styles.badgeColegio}>
+                    <GraduationCap size={10} color={THEME.secondary} strokeWidth={2.5} />
+                    <Text style={styles.badgeColegioTexto}>{usuario.colegioNombre}</Text>
+                  </View>
+                ) : (
+                  <View style={[styles.badgeColegio, { backgroundColor: '#F1F5F9', borderColor: '#CBD5E1' }]}>
+                    <Activity size={10} color="#64748B" strokeWidth={2.5} />
+                    <Text style={[styles.badgeColegioTexto, { color: '#64748B' }]}>Modo Independiente</Text>
+                  </View>
+                )}
+              </View>
               <View style={styles.rutaBadge}>
                 <Navigation size={10} color="#fff" strokeWidth={2} />
                 <Text style={styles.rutaBadgeTexto}>
@@ -850,6 +901,26 @@ export default function PantallaConductor({ navigation }) {
                   )}
                 </View>
               </View>
+
+              {!usuario?.colegioId && (
+                <TouchableOpacity 
+                  style={styles.bannerVinculacion}
+                  onPress={() => setModalColegioVisible(true)}
+                >
+                  <View style={styles.bannerVinculacionContent}>
+                    <GraduationCap size={20} color="#fff" />
+                    <View style={styles.bannerVinculacionTextContainer}>
+                      <Text style={styles.bannerVinculacionTitulo}>Vincular a un Colegio</Text>
+                      <Text style={styles.bannerVinculacionDesc}>
+                        Recibe rutas y alumnos directamente de una institución.
+                      </Text>
+                    </View>
+                  </View>
+                  <View style={styles.bannerVinculacionBtn}>
+                    <Text style={styles.bannerVinculacionBtnText}>Vincular</Text>
+                  </View>
+                </TouchableOpacity>
+              )}
 
               {desvioActivo && (
                 <View style={styles.alertaDesvio}>
@@ -1735,6 +1806,22 @@ const styles = StyleSheet.create({
     padding: 8,
     borderRadius: 10,
     marginLeft: 12,
+  },
+  badgeColegio: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(0,122,255,0.15)',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'rgba(0,122,255,0.3)',
+  },
+  badgeColegioTexto: {
+    fontSize: 10,
+    color: '#fff',
+    fontWeight: '700',
   },
 
   // Tabs Compactos

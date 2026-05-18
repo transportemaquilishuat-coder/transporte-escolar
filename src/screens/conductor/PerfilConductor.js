@@ -20,6 +20,7 @@ const obtenerAuthHeaders = async () => {
 
 export default function PerfilConductor({ navigation }) {
     const [conductorId, setConductorId] = useState(obtenerUsuario()?.id || CONDUCTOR_ID_DEMO);
+    const [usuarioActual, setUsuarioActual] = useState(obtenerUsuario());
     const [loading, setLoading] = useState(true);
     const [guardando, setGuardando] = useState(false);
     const [editando, setEditando] = useState(false);
@@ -51,6 +52,7 @@ export default function PerfilConductor({ navigation }) {
             const usuarioMemoria = obtenerUsuario();
             if (usuarioMemoria?.id) {
                 setConductorId(usuarioMemoria.id);
+                setUsuarioActual(usuarioMemoria);
                 return;
             }
 
@@ -61,6 +63,7 @@ export default function PerfilConductor({ navigation }) {
                 const usuario = JSON.parse(rawUsuario);
                 if (usuario?.id) {
                     setConductorId(usuario.id);
+                    setUsuarioActual(usuario);
                 }
             } catch (error) {
                 console.log('No se pudo leer el usuario persistido', error);
@@ -318,6 +321,22 @@ export default function PerfilConductor({ navigation }) {
                             ) : (
                                 <Text style={styles.fieldValue}>{dui || 'No registrado'}</Text>
                             )}
+
+                            <View style={styles.divider} />
+
+                            <Text style={styles.fieldLabel}>Institución / Colegio</Text>
+                            <View style={styles.fieldWithBadge}>
+                                <Text style={styles.fieldValue}>{usuarioActual?.colegioNombre || 'Modo Independiente'}</Text>
+                                {usuarioActual?.colegioId ? (
+                                    <View style={styles.badgeValido}>
+                                        <Text style={styles.badgeValidoTexto}>✓ Vinculado</Text>
+                                    </View>
+                                ) : (
+                                    <View style={[styles.badgePendiente, { backgroundColor: '#F1F5F9' }]}>
+                                        <Text style={[styles.badgePendienteTexto, { color: '#64748B' }]}>Autónomo</Text>
+                                    </View>
+                                )}
+                            </View>
 
                         </View>
 

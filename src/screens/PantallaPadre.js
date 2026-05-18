@@ -215,7 +215,8 @@ export default function PantallaPadre({ navigation }) {
   };
 
   const direccionEstaBloqueada = (alumno = {}) => (
-    Boolean(obtenerDireccionFicha(alumno) || tienePuntoRecogida(alumno))
+    // Solo bloqueamos si ya tiene coordenadas confirmadas
+    Boolean(tienePuntoRecogida(alumno) && puntoExactoConfirmadoBackend(alumno))
   );
 
   const esErrorAprobacionRuta = (status, datos = {}) => {
@@ -521,9 +522,28 @@ export default function PantallaPadre({ navigation }) {
     }, () => { });
 
     // Escuchar eventos de la ruta en tiempo real vía Sockets
-    socket.on('ruta:evento', (datos) => {
+    socket.on('conductor:evento', (datos) => {
       const hijoActual = hijos.find(h => h.id === hijoSeleccionadoId) || hijos[0];
-      if (hijoActual && datos.rutaId === hijoActual.rutaId) {
+      // Verificar si el evento pertenece a la ruta de alguno de los hijos
+      const esParaMiHijo = hijos.some(h => h.rutaId === datos.rutaId);
+      
+      if (esParaMiHijo) {
+        setHistorialViajes(prev => [
+          {
+            fecha: 'Hoy',
+            hora: datos.evento.hora,
+            estado: 'Evento',
+            texto: datos.evento.texto
+          },
+          ...prev
+        ]);
+      }
+    });
+
+    socket.on('ruta:evento', (datos) => {
+      // Mantener compatibilidad si el backend usa este nombre
+      const esParaMiHijo = hijos.some(h => h.rutaId === datos.rutaId);
+      if (esParaMiHijo) {
         setHistorialViajes(prev => [
           {
             fecha: 'Hoy',
@@ -1057,6 +1077,12 @@ export default function PantallaPadre({ navigation }) {
       setMostrarFormAlumno(false);
       setDatosNuevoAlumno(crearDatosAlumnoVacio());
 
+      // RECARGAR LISTA Y SELECCIONAR AL NUEVO HIJO
+      await cargarHijos();
+      if (datos.alumnoId) {
+        setHijoSeleccionadoId(datos.alumnoId);
+      }
+
       Alert.alert(
         '¡Listo!',
         `Vinculación exitosa. ${datos.desc || ''}`,
@@ -1071,7 +1097,6 @@ export default function PantallaPadre({ navigation }) {
           { text: 'Entendido' }
         ]
       );
-      await cargarHijos();
     } catch (e) {
       Alert.alert('Error', e.message || 'No se pudo vincular.');
     } finally {
@@ -3912,10 +3937,11 @@ const styles = StyleSheet.create({
   },
   tipoOption: {
     flex: 1,
-    paddingVertical: 10,
+    paddingVertical: 12, // Un poco más de espacio
     borderRadius: 10,
     backgroundColor: THEME.background,
     alignItems: 'center',
+    justifyContent: 'center', // Centrar verticalmente
     borderWidth: 1,
     borderColor: THEME.border,
   },
@@ -3927,6 +3953,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '700',
     color: THEME.textSecondary,
+    textAlign: 'center', // Centrar horizontalmente el texto
   },
   tipoOptionTextActivo: {
     color: '#fff',

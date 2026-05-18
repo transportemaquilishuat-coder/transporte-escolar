@@ -902,26 +902,6 @@ export default function PantallaConductor({ navigation }) {
                 </View>
               </View>
 
-              {!usuario?.colegioId && (
-                <TouchableOpacity 
-                  style={styles.bannerVinculacion}
-                  onPress={() => setModalColegioVisible(true)}
-                >
-                  <View style={styles.bannerVinculacionContent}>
-                    <GraduationCap size={20} color="#fff" />
-                    <View style={styles.bannerVinculacionTextContainer}>
-                      <Text style={styles.bannerVinculacionTitulo}>Vincular a un Colegio</Text>
-                      <Text style={styles.bannerVinculacionDesc}>
-                        Recibe rutas y alumnos directamente de una institución.
-                      </Text>
-                    </View>
-                  </View>
-                  <View style={styles.bannerVinculacionBtn}>
-                    <Text style={styles.bannerVinculacionBtnText}>Vincular</Text>
-                  </View>
-                </TouchableOpacity>
-              )}
-
               {desvioActivo && (
                 <View style={styles.alertaDesvio}>
                   <Text style={styles.alertaDesvioIcono}>⚠️</Text>

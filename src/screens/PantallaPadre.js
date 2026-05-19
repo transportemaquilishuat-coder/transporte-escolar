@@ -1384,15 +1384,25 @@ export default function PantallaPadre({ navigation }) {
               </View>
             )}
           </View>
-          <TouchableOpacity
-            onPress={async () => {
-              await limpiarSesion();
-              navigation.replace('Login');
-            }}
-            style={styles.botonSalir}
-          >
-            <LogOut size={18} color="#fff" strokeWidth={2} />
-          </TouchableOpacity>
+          
+          <View style={styles.headerAcciones}>
+            <TouchableOpacity
+              onPress={cargarHijos}
+              style={styles.botonHeader}
+            >
+              <Activity size={18} color="#fff" strokeWidth={2} />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              onPress={async () => {
+                await limpiarSesion();
+                navigation.replace('Login');
+              }}
+              style={styles.botonSalir}
+            >
+              <LogOut size={18} color="#fff" strokeWidth={2} />
+            </TouchableOpacity>
+          </View>
         </View>
       </View>
 
@@ -1634,26 +1644,30 @@ export default function PantallaPadre({ navigation }) {
         {/* Contenido del sheet */}
         <ScrollView style={styles.sheetContenido} showsVerticalScrollIndicator={false}>
 
+          {/* SUB-TABS PARA HIJOS (Siempre visibles si hay más de uno) */}
+          {hijos.length > 1 && (
+            <View style={{ marginBottom: 20 }}>
+              <Text style={styles.labelSelectorHijo}>Seleccionar Estudiante:</Text>
+              <View style={styles.subTabsContainer}>
+                {hijos.map(h => (
+                  <TouchableOpacity
+                    key={h.id}
+                    onPress={() => setHijoSeleccionadoId(h.id)}
+                    style={[styles.subTab, hijoSeleccionadoId === h.id && styles.subTabActivo]}
+                  >
+                    <Text style={[styles.subTabTexto, hijoSeleccionadoId === h.id && styles.subTabTextoActivo]}>
+                      {h.nombre.split(' ')[0]}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+              <View style={styles.divisorSutil} />
+            </View>
+          )}
+
           {/* Info */}
           {seccionSheet === 'info' && hijoSeleccionado && (
             <View>
-              {/* SUB-TABS PARA HIJOS (Solicitado por el usuario para visualizar otros hijos fácilmente) */}
-              {hijos.length > 1 && (
-                <View style={styles.subTabsContainer}>
-                  {hijos.map(h => (
-                    <TouchableOpacity
-                      key={h.id}
-                      onPress={() => setHijoSeleccionadoId(h.id)}
-                      style={[styles.subTab, hijoSeleccionadoId === h.id && styles.subTabActivo]}
-                    >
-                      <Text style={[styles.subTabTexto, hijoSeleccionadoId === h.id && styles.subTabTextoActivo]}>
-                        {h.nombre.split(' ')[0]}
-                      </Text>
-                    </TouchableOpacity>
-                  ))}
-                </View>
-              )}
-
               <View style={styles.fichaHeader}>
                 <View style={styles.fichaAvatar}>
                   <User size={22} color={THEME.secondary} strokeWidth={2} />
@@ -1718,6 +1732,20 @@ export default function PantallaPadre({ navigation }) {
                     <Text style={[styles.infoValor, { color: estadoColor }]}>{estadoTexto}</Text>
                   </View>
                 </View>
+
+                {hijoSeleccionado?.ausente && (
+                  <View style={[styles.infoRow, { backgroundColor: '#FEF2F2' }]}>
+                    <Text style={[styles.infoLabel, { color: THEME.error }]}>Ausencia hoy</Text>
+                    <Text style={[styles.infoValor, { color: THEME.error }]}>Reportada</Text>
+                  </View>
+                )}
+
+                {hijoSeleccionado?.tieneProgramacionHoy && (
+                  <View style={[styles.infoRow, { backgroundColor: '#FFF7ED' }]}>
+                    <Text style={[styles.infoLabel, { color: THEME.warning }]}>Cambio Temporal</Text>
+                    <Text style={[styles.infoValor, { color: THEME.warning }]}>Activo hoy</Text>
+                  </View>
+                )}
               </View>
 
               <View style={styles.autorizacionRutaNota}>
@@ -2513,6 +2541,16 @@ const styles = StyleSheet.create({
     color: 'rgba(255,255,255,0.8)',
     fontWeight: '500',
   },
+  headerAcciones: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  botonHeader: {
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    padding: 8,
+    borderRadius: 9,
+  },
   botonSalir: {
     backgroundColor: 'rgba(255,255,255,0.15)',
     padding: 8,
@@ -2995,6 +3033,20 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
 
+  labelSelectorHijo: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: THEME.textSecondary,
+    marginBottom: 8,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  divisorSutil: {
+    height: 1,
+    backgroundColor: THEME.border,
+    width: '100%',
+    marginBottom: 4,
+  },
   btnProbarVoz: {
     backgroundColor: THEME.background,
     borderRadius: 12,

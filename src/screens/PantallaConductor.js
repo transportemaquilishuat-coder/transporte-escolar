@@ -908,293 +908,294 @@ export default function PantallaConductor({ navigation }) {
         </View>
 
         {/* CONTENIDO SEGÚN TAB ACTIVA */}
-        <ScrollView
-          style={styles.contenido}
-          showsVerticalScrollIndicator={false}
-          scrollEnabled={tabActiva !== 'mapa'}
-          contentContainerStyle={styles.contentContainer}
-        >
-          {tabActiva === 'control' ? (
-            // ========== TAB DE CONTROL DE RUTA ==========
-            <View style={styles.tabContent}>
-              {/* SELECTOR DE TURNO - MOVIDO AQUÍ */}
-              <View style={[styles.turnoSelectorContainer, { marginHorizontal: -16, marginTop: -16, marginBottom: 16 }]}>
-                <TouchableOpacity
-                  style={[styles.turnoBtn, turno === 'mañana' && styles.turnoBtnActivo]}
-                  onPress={() => setTurno('mañana')}
-                  disabled={rutaActiva}
-                >
-                  <Clock size={12} color={turno === 'mañana' ? '#fff' : THEME.textSecondary} strokeWidth={2.5} />
-                  <Text style={[styles.turnoBtnTexto, turno === 'mañana' && styles.turnoBtnTextoActivo]}>
-                    Ruta matutina
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.turnoBtn, turno === 'tarde' && styles.turnoBtnActivo]}
-                  onPress={() => setTurno('tarde')}
-                  disabled={rutaActiva}
-                >
-                  <Clock size={12} color={turno === 'tarde' ? '#fff' : THEME.textSecondary} strokeWidth={2.5} />
-                  <Text style={[styles.turnoBtnTexto, turno === 'tarde' && styles.turnoBtnTextoActivo]}>
-                    Ruta vespertina
-                  </Text>
-                </TouchableOpacity>
-              </View>
-
-              {/* SELECTOR DE SENTIDO - MOVIDO AQUÍ */}
-              <View style={[styles.turnoSelectorContainer, { marginHorizontal: -16, marginTop: -16, marginBottom: 16, borderBottomWidth: 1 }]}>
-                <TouchableOpacity
-                  style={[styles.turnoBtn, sentido === 'recogida' && styles.turnoBtnActivo]}
-                  onPress={() => setSentido('recogida')}
-                  disabled={rutaActiva}
-                >
-                  <MapPin size={12} color={sentido === 'recogida' ? '#fff' : THEME.textSecondary} strokeWidth={2.5} />
-                  <Text style={[styles.turnoBtnTexto, sentido === 'recogida' && styles.turnoBtnTextoActivo]}>
-                    Hacia Colegio
-                  </Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  style={[styles.turnoBtn, sentido === 'entrega' && styles.turnoBtnActivo]}
-                  onPress={() => setSentido('entrega')}
-                  disabled={rutaActiva}
-                >
-                  <Home size={12} color={sentido === 'entrega' ? '#fff' : THEME.textSecondary} strokeWidth={2.5} />
-                  <Text style={[styles.turnoBtnTexto, sentido === 'entrega' && styles.turnoBtnTextoActivo]}>
-                    Hacia Casas
-                  </Text>
-                </TouchableOpacity>
-              </View>
-
-              {/* ESTADO DE RUTA */}
-              <View style={styles.tarjetaEstado}>
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <View>
-                    <View style={styles.estadoHeader}>
-                      <View style={[styles.estadoIndicador, { backgroundColor: rutaActiva ? THEME.success : THEME.warning }]} />
-                      <Text style={styles.estadoTexto}>{rutaActiva ? 'Ruta en curso' : 'Ruta detenida'}</Text>
-                    </View>
-                    <Text style={styles.estadoDescripcion}>
-                      {rutaActiva ? 'Continúa con tu recorrido habitual' : 'Inicia la ruta para comenzar'}
+        <View style={styles.contenido}>
+          {tabActiva === 'control' && (
+            <ScrollView 
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={styles.contentContainer}
+            >
+              <View style={styles.tabContent}>
+                {/* SELECTOR DE TURNO - MOVIDO AQUÍ */}
+                <View style={[styles.turnoSelectorContainer, { marginHorizontal: -16, marginTop: -16, marginBottom: 16 }]}>
+                  <TouchableOpacity
+                    style={[styles.turnoBtn, turno === 'mañana' && styles.turnoBtnActivo]}
+                    onPress={() => setTurno('mañana')}
+                    disabled={rutaActiva}
+                  >
+                    <Clock size={12} color={turno === 'mañana' ? '#fff' : THEME.textSecondary} strokeWidth={2.5} />
+                    <Text style={[styles.turnoBtnTexto, turno === 'mañana' && styles.turnoBtnTextoActivo]}>
+                      Ruta matutina
                     </Text>
-                  </View>
-
-                  {/* INDICADOR DE ALERTAS PENDIENTES */}
-                  {(ausenciasPendientes.length > 0 || programacionesPendientes.length > 0 || solicitudesPendientes.length > 0) && (
-                    <TouchableOpacity 
-                      style={styles.btnAlertasNotif}
-                      onPress={() => setModalAlertasVisible(true)}
-                    >
-                      <AlertCircle size={20} color="#fff" strokeWidth={2.5} />
-                      <View style={styles.badgeAlertaCount}>
-                        <Text style={styles.badgeAlertaCountTexto}>
-                          {ausenciasPendientes.length + programacionesPendientes.length + solicitudesPendientes.length}
-                        </Text>
-                      </View>
-                    </TouchableOpacity>
-                  )}
-                </View>
-              </View>
-
-              {desvioActivo && (
-                <View style={styles.alertaDesvio}>
-                  <Text style={styles.alertaDesvioIcono}>⚠️</Text>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.alertaDesvioTitulo}>Desvío detectado</Text>
-                    <Text style={styles.alertaDesvioSub}>
-                      Estás a {distanciaDesvio}m de la ruta programada
-                    </Text>
-                  </View>
-                </View>
-              )}
-
-              {/* GPS ACTIVO */}
-              {ubicacion && (
-                <View style={styles.gpsCard}>
-                  <View style={styles.gpsIconoContainer}>
-                    <MapPin size={18} color={THEME.success} strokeWidth={2} />
-                  </View>
-                  <View style={styles.gpsInfo}>
-                    <Text style={styles.gpsTitulo}>GPS activo</Text>
-                    <Text style={styles.gpsCoords}>
-                      {ubicacion.latitude.toFixed(5)}, {ubicacion.longitude.toFixed(5)}
-                    </Text>
-                  </View>
-                </View>
-              )}
-
-              {mostrarAvisoAusentes && (
-                <Animated.View
-                  style={[
-                    styles.autoInfoBanner,
-                    {
-                      opacity: avisoAusentesAnim,
-                      transform: [
-                        {
-                          translateY: avisoAusentesAnim.interpolate({
-                            inputRange: [0, 1],
-                            outputRange: [-10, 0],
-                          }),
-                        },
-                      ],
-                    },
-                  ]}
-                >
-                  <View style={styles.autoInfoBannerContenido}>
-                    <AlertCircle size={18} color={THEME.secondary} strokeWidth={2} />
-                    <Text style={styles.autoInfoTexto}>
-                      Los alumnos ausentes se excluyen de la ruta y el abordaje se registra automaticamente al llegar al punto definido por el padre.
-                    </Text>
-                  </View>
-                  <TouchableOpacity onPress={cerrarAvisoAusentes} style={styles.autoInfoCerrar}>
-                    <X size={16} color={THEME.textSecondary} strokeWidth={2.5} />
                   </TouchableOpacity>
-                </Animated.View>
-              )}
-
-              {/* PROGRESO */}
-              <View style={styles.tarjetaProgreso}>
-                <Text style={styles.progresoTitulo}>Progreso de hoy</Text>
-                <View style={styles.barraProgreso}>
-                  <View style={[styles.barraLlena, { width: `${progreso}%`, backgroundColor: rutaActiva ? THEME.success : THEME.textSecondary }]} />
+                  <TouchableOpacity
+                    style={[styles.turnoBtn, turno === 'tarde' && styles.turnoBtnActivo]}
+                    onPress={() => setTurno('tarde')}
+                    disabled={rutaActiva}
+                  >
+                    <Clock size={12} color={turno === 'tarde' ? '#fff' : THEME.textSecondary} strokeWidth={2.5} />
+                    <Text style={[styles.turnoBtnTexto, turno === 'tarde' && styles.turnoBtnTextoActivo]}>
+                      Ruta vespertina
+                    </Text>
+                  </TouchableOpacity>
                 </View>
-                <Text style={styles.progresoPorcentaje}>{Math.round(progreso)}% completado</Text>
 
-                <View style={styles.resumenRow}>
-                  <View style={styles.resumenItem}>
-                    <Text style={[styles.resumenNumero, { color: THEME.success }]}>{totalAbordados}</Text>
-                    <Text style={styles.resumenLabel}>Abordados</Text>
-                  </View>
-                  <View style={styles.resumenDivider} />
-                  <View style={styles.resumenItem}>
-                    <Text style={[styles.resumenNumero, { color: THEME.warning }]}>{totalPendientes}</Text>
-                    <Text style={styles.resumenLabel}>Pendientes</Text>
-                  </View>
-                  <View style={styles.resumenDivider} />
-                  <View style={styles.resumenItem}>
-                    <Text style={[styles.resumenNumero, { color: THEME.error }]}>{totalAusentes}</Text>
-                    <Text style={styles.resumenLabel}>Ausentes</Text>
+                {/* SELECTOR DE SENTIDO - MOVIDO AQUÍ */}
+                <View style={[styles.turnoSelectorContainer, { marginHorizontal: -16, marginTop: -16, marginBottom: 16, borderBottomWidth: 1 }]}>
+                  <TouchableOpacity
+                    style={[styles.turnoBtn, sentido === 'recogida' && styles.turnoBtnActivo]}
+                    onPress={() => setSentido('recogida')}
+                    disabled={rutaActiva}
+                  >
+                    <MapPin size={12} color={sentido === 'recogida' ? '#fff' : THEME.textSecondary} strokeWidth={2.5} />
+                    <Text style={[styles.turnoBtnTexto, sentido === 'recogida' && styles.turnoBtnTextoActivo]}>
+                      Hacia Colegio
+                    </Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.turnoBtn, sentido === 'entrega' && styles.turnoBtnActivo]}
+                    onPress={() => setSentido('entrega')}
+                    disabled={rutaActiva}
+                  >
+                    <Home size={12} color={sentido === 'entrega' ? '#fff' : THEME.textSecondary} strokeWidth={2.5} />
+                    <Text style={[styles.turnoBtnTexto, sentido === 'entrega' && styles.turnoBtnTextoActivo]}>
+                      Hacia Casas
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+
+                {/* ESTADO DE RUTA */}
+                <View style={styles.tarjetaEstado}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <View>
+                      <View style={styles.estadoHeader}>
+                        <View style={[styles.estadoIndicador, { backgroundColor: rutaActiva ? THEME.success : THEME.warning }]} />
+                        <Text style={styles.estadoTexto}>{rutaActiva ? 'Ruta en curso' : 'Ruta detenida'}</Text>
+                      </View>
+                      <Text style={styles.estadoDescripcion}>
+                        {rutaActiva ? 'Continúa con tu recorrido habitual' : 'Inicia la ruta para comenzar'}
+                      </Text>
+                    </View>
+
+                    {/* INDICADOR DE ALERTAS PENDIENTES */}
+                    {(ausenciasPendientes.length > 0 || programacionesPendientes.length > 0 || solicitudesPendientes.length > 0) && (
+                      <TouchableOpacity 
+                        style={styles.btnAlertasNotif}
+                        onPress={() => setModalAlertasVisible(true)}
+                      >
+                        <AlertCircle size={20} color="#fff" strokeWidth={2.5} />
+                        <View style={styles.badgeAlertaCount}>
+                          <Text style={styles.badgeAlertaCountTexto}>
+                            {ausenciasPendientes.length + programacionesPendientes.length + solicitudesPendientes.length}
+                          </Text>
+                        </View>
+                      </TouchableOpacity>
+                    )}
                   </View>
                 </View>
-              </View>
 
-              {/* LISTA DE ALUMNOS */}
-              <View style={styles.listaHeader}>
-                <View>
-                  <Text style={styles.listaTitulo}>Lista de alumnos</Text>
-                  <Text style={styles.listaContador}>{alumnosActivosEnRuta.length} estudiantes programados en ruta</Text>
+                {desvioActivo && (
+                  <View style={styles.alertaDesvio}>
+                    <Text style={styles.alertaDesvioIcono}>⚠️</Text>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.alertaDesvioTitulo}>Desvío detectado</Text>
+                      <Text style={styles.alertaDesvioSub}>
+                        Estás a {distanciaDesvio}m de la ruta programada
+                      </Text>
+                    </View>
+                  </View>
+                )}
+
+                {/* GPS ACTIVO */}
+                {ubicacion && (
+                  <View style={styles.gpsCard}>
+                    <View style={styles.gpsIconoContainer}>
+                      <MapPin size={18} color={THEME.success} strokeWidth={2} />
+                    </View>
+                    <View style={styles.gpsInfo}>
+                      <Text style={styles.gpsTitulo}>GPS activo</Text>
+                      <Text style={styles.gpsCoords}>
+                        {ubicacion.latitude.toFixed(5)}, {ubicacion.longitude.toFixed(5)}
+                      </Text>
+                    </View>
+                  </View>
+                )}
+
+                {mostrarAvisoAusentes && (
+                  <Animated.View
+                    style={[
+                      styles.autoInfoBanner,
+                      {
+                        opacity: avisoAusentesAnim,
+                        transform: [
+                          {
+                            translateY: avisoAusentesAnim.interpolate({
+                              inputRange: [0, 1],
+                              outputRange: [-10, 0],
+                            }),
+                          },
+                        ],
+                      },
+                    ]}
+                  >
+                    <View style={styles.autoInfoBannerContenido}>
+                      <AlertCircle size={18} color={THEME.secondary} strokeWidth={2} />
+                      <Text style={styles.autoInfoTexto}>
+                        Los alumnos ausentes se excluyen de la ruta y el abordaje se registra automaticamente al llegar al punto definido por el padre.
+                      </Text>
+                    </View>
+                    <TouchableOpacity onPress={cerrarAvisoAusentes} style={styles.autoInfoCerrar}>
+                      <X size={16} color={THEME.textSecondary} strokeWidth={2.5} />
+                    </TouchableOpacity>
+                  </Animated.View>
+                )}
+
+                {/* PROGRESO */}
+                <View style={styles.tarjetaProgreso}>
+                  <Text style={styles.progresoTitulo}>Progreso de hoy</Text>
+                  <View style={styles.barraProgreso}>
+                    <View style={[styles.barraLlena, { width: `${progreso}%`, backgroundColor: rutaActiva ? THEME.success : THEME.textSecondary }]} />
+                  </View>
+                  <Text style={styles.progresoPorcentaje}>{Math.round(progreso)}% completado</Text>
+
+                  <View style={styles.resumenRow}>
+                    <View style={styles.resumenItem}>
+                      <Text style={[styles.resumenNumero, { color: THEME.success }]}>{totalAbordados}</Text>
+                      <Text style={styles.resumenLabel}>Abordados</Text>
+                    </View>
+                    <View style={styles.resumenDivider} />
+                    <View style={styles.resumenItem}>
+                      <Text style={[styles.resumenNumero, { color: THEME.warning }]}>{totalPendientes}</Text>
+                      <Text style={styles.resumenLabel}>Pendientes</Text>
+                    </View>
+                    <View style={styles.resumenDivider} />
+                    <View style={styles.resumenItem}>
+                      <Text style={[styles.resumenNumero, { color: THEME.error }]}>{totalAusentes}</Text>
+                      <Text style={styles.resumenLabel}>Ausentes</Text>
+                    </View>
+                  </View>
                 </View>
-              </View>
 
-              {loading ? (
-                <ActivityIndicator color={THEME.primary} style={{ marginTop: 20 }} />
-              ) : error ? (
-                <Text style={styles.errorTexto}>{error}</Text>
-              ) : (
-                alumnosActivosEnRuta.map((alumno) => (
-                  <View key={alumno.id} style={[
-                    styles.alumnoCard,
-                    alumno.estado === 'abordado' && styles.alumnoAbordado,
-                    alumno.infoAusencia?.esAusente && styles.alumnoAusente,
-                  ]}>
-                    <View style={[
-                      styles.alumnoOrden,
-                      alumno.estado === 'abordado' && styles.alumnoOrdenAbordado,
-                      alumno.infoAusencia?.esAusente && styles.alumnoOrdenAusente,
+                {/* LISTA DE ALUMNOS */}
+                <View style={styles.listaHeader}>
+                  <View>
+                    <Text style={styles.listaTitulo}>Lista de alumnos</Text>
+                    <Text style={styles.listaContador}>{alumnosActivosEnRuta.length} estudiantes programados en ruta</Text>
+                  </View>
+                </View>
+
+                {loading ? (
+                  <ActivityIndicator color={THEME.primary} style={{ marginTop: 20 }} />
+                ) : error ? (
+                  <Text style={styles.errorTexto}>{error}</Text>
+                ) : (
+                  alumnosActivosEnRuta.map((alumno) => (
+                    <View key={alumno.id} style={[
+                      styles.alumnoCard,
+                      alumno.estado === 'abordado' && styles.alumnoAbordado,
+                      alumno.infoAusencia?.esAusente && styles.alumnoAusente,
                     ]}>
-                      <Text style={styles.alumnoOrdenNum}>{alumno.orden}</Text>
-                    </View>
-
-                    <View style={styles.alumnoInfo}>
-                      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                        <Text style={styles.alumnoNombre} numberOfLines={1}>{alumno.nombre}</Text>
-                        {alumno.esCambioTemporal && (
-                          <View style={styles.badgeTemp}>
-                            <Clock size={10} color={THEME.warning} />
-                            <Text style={styles.badgeTempTexto}>Temp</Text>
-                          </View>
-                        )}
-                        {alumno.infoAusencia?.pendienteAutorizacion && (
-                          <View style={styles.badgeAusenciaPend}>
-                            <AlertCircle size={10} color={THEME.error} />
-                            <Text style={styles.badgeAusenciaPendTexto}>Pte.</Text>
-                          </View>
-                        )}
+                      <View style={[
+                        styles.alumnoOrden,
+                        alumno.estado === 'abordado' && styles.alumnoOrdenAbordado,
+                        alumno.infoAusencia?.esAusente && styles.alumnoOrdenAusente,
+                      ]}>
+                        <Text style={styles.alumnoOrdenNum}>{alumno.orden}</Text>
                       </View>
-                      
-                      <View style={styles.infoRow}>
-                        <MapPin size={12} color={alumno.esCambioTemporal ? THEME.warning : THEME.textSecondary} strokeWidth={2} />
-                        <Text style={[styles.alumnoParada, alumno.esCambioTemporal && { color: THEME.warning, fontWeight: '700' }]} numberOfLines={1}>
-                          {alumno.parada}
-                        </Text>
-                      </View>
-                      
-                      {alumno.notaProgramacion ? (
-                        <Text style={{ fontSize: 10, color: THEME.warning, fontStyle: 'italic' }} numberOfLines={1}>
-                          Nota: {alumno.notaProgramacion}
-                        </Text>
-                      ) : (
-                        <View style={styles.infoRow}>
-                          <GraduationCap size={12} color={THEME.textSecondary} strokeWidth={2} />
-                          <Text style={styles.alumnoGrado}>{alumno.grado}</Text>
-                        </View>
-                      )}
-                    </View>
 
-                    <View style={styles.alumnoAccion}>
-                      {alumno.estado === 'abordado' ? (
-                        <View style={styles.badgeAbordado}>
-                          <Check size={12} color={THEME.success} strokeWidth={3} />
-                          <Text style={styles.badgeAbordadoTexto}>Abordado</Text>
-                        </View>
-                      ) : (
+                      <View style={styles.alumnoInfo}>
                         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                          {alumno.padreTelefono && (
-                            <TouchableOpacity 
-                              style={styles.btnLlamarPadre}
-                              onPress={() => handleLlamarPadre(alumno.padreTelefono, alumno.nombre)}
-                            >
-                              <Phone size={16} color={THEME.secondary} strokeWidth={2.5} />
-                            </TouchableOpacity>
+                          <Text style={styles.alumnoNombre} numberOfLines={1}>{alumno.nombre}</Text>
+                          {alumno.esCambioTemporal && (
+                            <View style={styles.badgeTemp}>
+                              <Clock size={10} color={THEME.warning} />
+                              <Text style={styles.badgeTempTexto}>Temp</Text>
+                            </View>
                           )}
-                          <View style={[styles.badgeEsperaAuto, !rutaActiva && styles.btnDeshabilitado]}>
-                            <Clock size={12} color={THEME.warning} strokeWidth={2} />
-                            <Text style={styles.badgeEsperaAutoTexto}>
-                              {alumno.latitude != null && alumno.longitude != null ? 'Auto' : 'Manual'}
-                            </Text>
-                          </View>
+                          {alumno.infoAusencia?.pendienteAutorizacion && (
+                            <View style={styles.badgeAusenciaPend}>
+                              <AlertCircle size={10} color={THEME.error} />
+                              <Text style={styles.badgeAusenciaPendTexto}>Pte.</Text>
+                            </View>
+                          )}
                         </View>
-                      )}
-                    </View>
-                  </View>
-                ))
-              )}
-
-              {/* BITÁCORA */}
-              {eventos.length > 0 && (
-                <View style={styles.bitacora}>
-                  <View style={styles.bitacoraHeader}>
-                    <View style={styles.bitacoraTitleRow}>
-                      <Clock size={18} color={THEME.primary} strokeWidth={2} />
-                      <Text style={styles.seccionTitulo}>Bitácora de hoy</Text>
-                    </View>
-                    <Text style={styles.bitacoraContador}>{eventos.length} eventos</Text>
-                  </View>
-                  {eventos.map((ev, i) => (
-                    <View key={i} style={styles.eventoRow}>
-                      <View style={styles.eventoHoraContainer}>
-                        <Text style={styles.eventoHora}>{ev.hora}</Text>
+                        
+                        <View style={styles.infoRow}>
+                          <MapPin size={12} color={alumno.esCambioTemporal ? THEME.warning : THEME.textSecondary} strokeWidth={2} />
+                          <Text style={[styles.alumnoParada, alumno.esCambioTemporal && { color: THEME.warning, fontWeight: '700' }]} numberOfLines={1}>
+                            {alumno.parada}
+                          </Text>
+                        </View>
+                        
+                        {alumno.notaProgramacion ? (
+                          <Text style={{ fontSize: 10, color: THEME.warning, fontStyle: 'italic' }} numberOfLines={1}>
+                            Nota: {alumno.notaProgramacion}
+                          </Text>
+                        ) : (
+                          <View style={styles.infoRow}>
+                            <GraduationCap size={12} color={THEME.textSecondary} strokeWidth={2} />
+                            <Text style={styles.alumnoGrado}>{alumno.grado}</Text>
+                          </View>
+                        )}
                       </View>
-                      <View style={styles.eventoPunto} />
-                      <Text style={styles.eventoTexto}>{ev.texto}</Text>
+
+                      <View style={styles.alumnoAccion}>
+                        {alumno.estado === 'abordado' ? (
+                          <View style={styles.badgeAbordado}>
+                            <Check size={12} color={THEME.success} strokeWidth={3} />
+                            <Text style={styles.badgeAbordadoTexto}>Abordado</Text>
+                          </View>
+                        ) : (
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                            {alumno.padreTelefono && (
+                              <TouchableOpacity 
+                                style={styles.btnLlamarPadre}
+                                onPress={() => handleLlamarPadre(alumno.padreTelefono, alumno.nombre)}
+                              >
+                                <Phone size={16} color={THEME.secondary} strokeWidth={2.5} />
+                              </TouchableOpacity>
+                            )}
+                            <View style={[styles.badgeEsperaAuto, !rutaActiva && styles.btnDeshabilitado]}>
+                              <Clock size={12} color={THEME.warning} strokeWidth={2} />
+                              <Text style={styles.badgeEsperaAutoTexto}>
+                                {alumno.latitude != null && alumno.longitude != null ? 'Auto' : 'Manual'}
+                              </Text>
+                            </View>
+                          </View>
+                        )}
+                      </View>
                     </View>
-                  ))}
-                </View>
-              )}
-            </View>
-          ) : tabActiva === 'mapa' ? (
+                  ))
+                )}
+
+                {/* BITÁCORA */}
+                {eventos.length > 0 && (
+                  <View style={styles.bitacora}>
+                    <View style={styles.bitacoraHeader}>
+                      <View style={styles.bitacoraTitleRow}>
+                        <Clock size={18} color={THEME.primary} strokeWidth={2} />
+                        <Text style={styles.seccionTitulo}>Bitácora de hoy</Text>
+                      </View>
+                      <Text style={styles.bitacoraContador}>{eventos.length} eventos</Text>
+                    </View>
+                    {eventos.map((ev, i) => (
+                      <View key={i} style={styles.eventoRow}>
+                        <View style={styles.eventoHoraContainer}>
+                          <Text style={styles.eventoHora}>{ev.hora}</Text>
+                        </View>
+                        <View style={styles.eventoPunto} />
+                        <Text style={styles.eventoTexto}>{ev.texto}</Text>
+                      </View>
+                    ))}
+                  </View>
+                )}
+              </View>
+            </ScrollView>
+          )}
+
+          {tabActiva === 'mapa' && (
             // ========== TAB DE MAPA DE RECOGIDA ==========
-            <View style={[styles.tabContent, styles.mapaTabContent]}>
-              <View style={[styles.mapContainer, { height: alturaMapaConductor }]}>
+            <View style={[styles.tabContent, styles.mapaTabContent, { flex: 1 }]}>
+              <View style={[styles.mapContainer, { height: '100%' }]}>
                 <MapView
                   key={`mapa-conductor-${mapRenderKey}`}
                   ref={mapRef}
@@ -1312,154 +1313,161 @@ export default function PantallaConductor({ navigation }) {
                 </View>
               </View>
             </View>
-          ) : (
+          )}
+
+          {tabActiva === 'alumnos' && (
             // ========== TAB DE GESTIÓN DE ALUMNOS ==========
-            <View style={styles.tabContent}>
-              {/* RESUMEN DE ALUMNOS */}
-              <View style={styles.resumenGestion}>
-                <View style={styles.resumenGestionItem}>
-                  <Text style={styles.resumenGestionNumero}>{alumnos.filter(a => a.activo !== false).length}</Text>
-                  <Text style={styles.resumenGestionLabel}>Activos</Text>
+            <ScrollView 
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={styles.contentContainer}
+            >
+              <View style={styles.tabContent}>
+                {/* RESUMEN DE ALUMNOS */}
+                <View style={styles.resumenGestion}>
+                  <View style={styles.resumenGestionItem}>
+                    <Text style={styles.resumenGestionNumero}>{alumnos.filter(a => a.activo !== false).length}</Text>
+                    <Text style={styles.resumenGestionLabel}>Activos</Text>
+                  </View>
+                  <View style={styles.resumenGestionDivider} />
+                  <View style={styles.resumenGestionItem}>
+                    <Text style={[styles.resumenGestionNumero, { color: THEME.success }]}>{totalAbordados}</Text>
+                    <Text style={styles.resumenGestionLabel}>Abordados</Text>
+                  </View>
+                  <View style={styles.resumenGestionDivider} />
+                  <View style={styles.resumenGestionItem}>
+                    <Text style={[styles.resumenGestionNumero, { color: THEME.error }]}>{alumnos.filter(a => a.activo === false).length}</Text>
+                    <Text style={styles.resumenGestionLabel}>Inactivos</Text>
+                  </View>
                 </View>
-                <View style={styles.resumenGestionDivider} />
-                <View style={styles.resumenGestionItem}>
-                  <Text style={[styles.resumenGestionNumero, { color: THEME.success }]}>{totalAbordados}</Text>
-                  <Text style={styles.resumenGestionLabel}>Abordados</Text>
+
+                {/* ACCIONES PRINCIPALES - LIMPIAS Y SIN REDUNDANCIA */}
+                <View style={styles.accionesPrincipales}>
+                  <TouchableOpacity 
+                    style={[styles.accionCard, { backgroundColor: THEME.secondary, flex: 1 }]} 
+                    onPress={() => navigation.navigate('ConductorPadres')}
+                  >
+                    <Users size={20} color="#fff" strokeWidth={2.5} />
+                    <Text style={styles.accionCardTexto}>Vinculaciones</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity 
+                    style={[styles.accionCard, { backgroundColor: THEME.info, flex: 1 }]} 
+                    onPress={() => setModalColegioVisible(true)}
+                  >
+                    <Navigation size={20} color="#fff" strokeWidth={2.5} />
+                    <Text style={styles.accionCardTexto}>Vincular Colegio</Text>
+                  </TouchableOpacity>
                 </View>
-                <View style={styles.resumenGestionDivider} />
-                <View style={styles.resumenGestionItem}>
-                  <Text style={[styles.resumenGestionNumero, { color: THEME.error }]}>{alumnos.filter(a => a.activo === false).length}</Text>
-                  <Text style={styles.resumenGestionLabel}>Inactivos</Text>
+
+                {/* LISTA COMPLETA CON ACCIONES DE GESTIÓN */}
+                <View style={styles.gestionHeader}>
+                  <Text style={styles.seccionTitulo}>Todos los alumnos</Text>
                 </View>
-              </View>
 
-              {/* ACCIONES PRINCIPALES - LIMPIAS Y SIN REDUNDANCIA */}
-              <View style={styles.accionesPrincipales}>
-                <TouchableOpacity 
-                  style={[styles.accionCard, { backgroundColor: THEME.secondary, flex: 1 }]} 
-                  onPress={() => navigation.navigate('ConductorPadres')}
-                >
-                  <Users size={20} color="#fff" strokeWidth={2.5} />
-                  <Text style={styles.accionCardTexto}>Vinculaciones</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity 
-                  style={[styles.accionCard, { backgroundColor: THEME.info, flex: 1 }]} 
-                  onPress={() => setModalColegioVisible(true)}
-                >
-                  <Navigation size={20} color="#fff" strokeWidth={2.5} />
-                  <Text style={styles.accionCardTexto}>Vincular Colegio</Text>
-                </TouchableOpacity>
-              </View>
-
-              {/* LISTA COMPLETA CON ACCIONES DE GESTIÓN */}
-              <View style={styles.gestionHeader}>
-                <Text style={styles.seccionTitulo}>Todos los alumnos</Text>
-              </View>
-
-              {loading ? (
-                <ActivityIndicator color={THEME.primary} style={{ marginTop: 20 }} />
-              ) : error ? (
-                <Text style={styles.errorTexto}>{error}</Text>
-              ) : alumnos.length === 0 ? (
-                <View style={styles.emptyState}>
-                  <Users size={48} color={THEME.border} strokeWidth={1.5} />
-                  <Text style={styles.emptyStateTitulo}>No hay alumnos registrados</Text>
-                  <Text style={styles.emptyStateSub}>Presiona "Nuevo" para agregar el primer alumno</Text>
-                </View>
-              ) : (
-                alumnos.map((alumno) => (
-                  <View key={alumno.id} style={[
-                    styles.alumnoGestionCard,
-                    alumno.activo === false && styles.alumnoInactivo,
-                    alumno.infoAusencia?.esAusente && styles.alumnoAusente
-                  ]}>
-                    <View style={styles.alumnoGestionInfo}>
-                      <View style={styles.alumnoGestionHeader}>
-                        <Text style={styles.alumnoGestionNombre}>{alumno.nombre}</Text>
-                        {alumno.activo === false && (
-                          <View style={styles.badgeInactivo}>
-                            <Text style={styles.badgeInactivoTexto}>Inactivo</Text>
-                          </View>
-                        )}
-                        {alumno.esCambioTemporal && (
-                          <View style={styles.badgeTemp}>
-                            <Text style={styles.badgeTempTexto}>Temporal</Text>
-                          </View>
-                        )}
-                      </View>
-
-                      <View style={styles.alumnoGestionDetalles}>
-                        <View style={styles.infoRow}>
-                          <GraduationCap size={14} color={THEME.textSecondary} strokeWidth={2} />
-                          <Text style={styles.alumnoGestionDetalle}>{alumno.grado || 'Sin grado'}</Text>
+                {loading ? (
+                  <ActivityIndicator color={THEME.primary} style={{ marginTop: 20 }} />
+                ) : error ? (
+                  <Text style={styles.errorTexto}>{error}</Text>
+                ) : alumnos.length === 0 ? (
+                  <View style={styles.emptyState}>
+                    <Users size={48} color={THEME.border} strokeWidth={1.5} />
+                    <Text style={styles.emptyStateTitulo}>No hay alumnos registrados</Text>
+                    <Text style={styles.emptyStateSub}>Presiona "Nuevo" para agregar el primer alumno</Text>
+                  </View>
+                ) : (
+                  alumnos.map((alumno) => (
+                    <View key={alumno.id} style={[
+                      styles.alumnoGestionCard,
+                      alumno.activo === false && styles.alumnoInactivo,
+                      alumno.infoAusencia?.esAusente && styles.alumnoAusente
+                    ]}>
+                      <View style={styles.alumnoGestionInfo}>
+                        <View style={styles.alumnoGestionHeader}>
+                          <Text style={styles.alumnoGestionNombre}>{alumno.nombre}</Text>
+                          {alumno.activo === false && (
+                            <View style={styles.badgeInactivo}>
+                              <Text style={styles.badgeInactivoTexto}>Inactivo</Text>
+                            </View>
+                          )}
+                          {alumno.esCambioTemporal && (
+                            <View style={styles.badgeTemp}>
+                              <Text style={styles.badgeTempTexto}>Temporal</Text>
+                            </View>
+                          )}
                         </View>
-                        <View style={styles.infoRow}>
-                          <MapPin size={14} color={alumno.esCambioTemporal ? THEME.warning : THEME.textSecondary} strokeWidth={2} />
-                          <Text style={[styles.alumnoGestionDetalle, alumno.esCambioTemporal && { color: THEME.warning, fontWeight: '700' }]}>
-                            {alumno.parada || 'Sin parada'}
-                          </Text>
-                        </View>
-                        {alumno.padreNombre && (
+
+                        <View style={styles.alumnoGestionDetalles}>
                           <View style={styles.infoRow}>
-                            <Users size={14} color={THEME.textSecondary} strokeWidth={2} />
-                            <Text style={styles.alumnoGestionDetalle}>Padre: {alumno.padreNombre}</Text>
+                            <GraduationCap size={14} color={THEME.textSecondary} strokeWidth={2} />
+                            <Text style={styles.alumnoGestionDetalle}>{alumno.grado || 'Sin grado'}</Text>
                           </View>
-                        )}
-                      </View>
-
-                      <View style={styles.alumnoGestionEstado}>
-                        {alumno.estado === 'abordado' ? (
-                          <View style={styles.estadoRow}>
-                            <Check size={14} color={THEME.success} strokeWidth={2.5} />
-                            <Text style={[styles.estadoTextoRow, { color: THEME.success }]}>Abordado hoy</Text>
-                          </View>
-                        ) : (alumno.ausente || alumno.infoAusencia?.esAusente) ? (
-                          <View style={styles.estadoRow}>
-                            <AlertCircle size={14} color={THEME.error} strokeWidth={2} />
-                            <Text style={[styles.estadoTextoRow, { color: THEME.error }]}>
-                              {alumno.infoAusencia?.pendienteAutorizacion ? 'Ausencia pendiente' : 'Ausente hoy'}
+                          <View style={styles.infoRow}>
+                            <MapPin size={14} color={alumno.esCambioTemporal ? THEME.warning : THEME.textSecondary} strokeWidth={2} />
+                            <Text style={[styles.alumnoGestionDetalle, alumno.esCambioTemporal && { color: THEME.warning, fontWeight: '700' }]}>
+                              {alumno.parada || 'Sin parada'}
                             </Text>
                           </View>
-                        ) : (
-                          <View style={styles.estadoRow}>
-                            <Clock size={14} color={THEME.textSecondary} strokeWidth={2} />
-                            <Text style={[styles.estadoTextoRow, { color: THEME.textSecondary }]}>Pendiente</Text>
-                          </View>
-                        )}
+                          {alumno.padreNombre && (
+                            <View style={styles.infoRow}>
+                              <Users size={14} color={THEME.textSecondary} strokeWidth={2} />
+                              <Text style={styles.alumnoGestionDetalle}>Padre: {alumno.padreNombre}</Text>
+                            </View>
+                          )}
+                        </View>
+
+                        <View style={styles.alumnoGestionEstado}>
+                          {alumno.estado === 'abordado' ? (
+                            <View style={styles.estadoRow}>
+                              <Check size={14} color={THEME.success} strokeWidth={2.5} />
+                              <Text style={[styles.estadoTextoRow, { color: THEME.success }]}>Abordado hoy</Text>
+                            </View>
+                          ) : (alumno.ausente || alumno.infoAusencia?.esAusente) ? (
+                            <View style={styles.estadoRow}>
+                              <AlertCircle size={14} color={THEME.error} strokeWidth={2} />
+                              <Text style={[styles.estadoTextoRow, { color: THEME.error }]}>
+                                {alumno.infoAusencia?.pendienteAutorizacion ? 'Ausencia pendiente' : 'Ausente hoy'}
+                              </Text>
+                            </View>
+                          ) : (
+                            <View style={styles.estadoRow}>
+                              <Clock size={14} color={THEME.textSecondary} strokeWidth={2} />
+                              <Text style={[styles.estadoTextoRow, { color: THEME.textSecondary }]}>Pendiente</Text>
+                            </View>
+                          )}
+                        </View>
+                      </View>
+
+                      {/* ACCIONES DE GESTIÓN */}
+                      <View style={styles.gestionAcciones}>
+                        <View style={{ gap: 8 }}>
+                          {alumno.padreTelefono && (
+                            <TouchableOpacity
+                              style={styles.btnLlamarPadre}
+                              onPress={() => handleLlamarPadre(alumno.padreTelefono, alumno.nombre)}
+                            >
+                              <Phone size={18} color={THEME.secondary} strokeWidth={2.5} />
+                            </TouchableOpacity>
+                          )}
+                          {alumno.activo !== false && (
+                            <TouchableOpacity
+                              style={styles.btnDesinscribir}
+                              onPress={() => desinscribirAlumno(alumno)}
+                            >
+                              <Trash2 size={18} color={THEME.error} strokeWidth={2} />
+                            </TouchableOpacity>
+                          )}
+                        </View>
                       </View>
                     </View>
+                  ))
+                )}
 
-                    {/* ACCIONES DE GESTIÓN */}
-                    <View style={styles.gestionAcciones}>
-                      <View style={{ gap: 8 }}>
-                        {alumno.padreTelefono && (
-                          <TouchableOpacity
-                            style={styles.btnLlamarPadre}
-                            onPress={() => handleLlamarPadre(alumno.padreTelefono, alumno.nombre)}
-                          >
-                            <Phone size={18} color={THEME.secondary} strokeWidth={2.5} />
-                          </TouchableOpacity>
-                        )}
-                        {alumno.activo !== false && (
-                          <TouchableOpacity
-                            style={styles.btnDesinscribir}
-                            onPress={() => desinscribirAlumno(alumno)}
-                          >
-                            <Trash2 size={18} color={THEME.error} strokeWidth={2} />
-                          </TouchableOpacity>
-                        )}
-                      </View>
-                    </View>
-                  </View>
-                ))
-              )}
-
-              {/* ESPACIO PARA EL BOTÓN FLOTANTE */}
-              <View style={{ height: 80 }} />
-            </View>
+                {/* ESPACIO PARA EL BOTÓN FLOTANTE */}
+                <View style={{ height: 80 }} />
+              </View>
+            </ScrollView>
           )}
-        </ScrollView>
+        </View>
 
         {/* BOTÓN NUEVO FLOTANTE (SOLO EN TAB ALUMNOS) */}
         {tabActiva === 'alumnos' && (

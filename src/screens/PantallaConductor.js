@@ -12,7 +12,7 @@ import { useKeepAwake } from 'expo-keep-awake';
 import {
   Play, Square, MapPin, Users, GraduationCap,
   Clock, AlertCircle, Check, X, Plus, Trash2,
-  LogOut, Activity, Navigation, KeyRound, UsersRound, Phone
+  LogOut, Activity, Navigation, KeyRound, UsersRound, Phone, Home
 } from 'lucide-react-native';
 import { useBranding } from '../hooks/useBranding';
 import { cargarSesionPersistida, limpiarSesion, obtenerToken, obtenerUsuario } from '../services/session';
@@ -112,6 +112,10 @@ export default function PantallaConductor({ navigation }) {
   const [turno, setTurno] = useState(() => {
     const hora = new Date().getHours();
     return (hora >= 5 && hora < 12) ? 'mañana' : 'tarde';
+  });
+  const [sentido, setSentido] = useState(() => {
+    const hora = new Date().getHours();
+    return (hora >= 5 && hora < 12) ? 'recogida' : 'entrega';
   });
   const turnoEstudioActivo = TURNOS_ESTUDIO[turno] || 'matutino';
   const [modalAlumnoVisible, setModalAlumnoVisible] = useState(false);
@@ -397,12 +401,12 @@ export default function PantallaConductor({ navigation }) {
 
   useEffect(() => {
     if (conductorId) cargarAlumnos();
-  }, [turno]);
+  }, [turno, sentido]);
 
   // ========== FUNCIONES ==========
   const cargarAlumnos = async () => {
     try {
-      const url = `${SERVIDOR}/api/asignaciones/conductor/${conductorId || CONDUCTOR_ID_DEMO}?turno=${turno}&turno_estudio=${turnoEstudioActivo}`;
+      const url = `${SERVIDOR}/api/asignaciones/conductor/${conductorId || CONDUCTOR_ID_DEMO}?turno=${turno}&turno_estudio=${turnoEstudioActivo}&sentido=${sentido}`;
       const res = await fetch(url, {
         headers: await obtenerAuthHeaders(),
       });
@@ -548,10 +552,9 @@ export default function PantallaConductor({ navigation }) {
       alertasProximidadEnviadasRef.current.clear();
       const loc = await Location.getCurrentPositionAsync({});
       const rutaActivaActual = rutas[0] || {};
-      const sentidoRuta = new Date().getHours() < 12 ? 'casa_a_colegio' : 'colegio_a_casa';
       setUbicacion(loc.coords);
       setRutaActiva(true);
-      agregarEvento('Ruta iniciada');
+      agregarEvento(`Ruta iniciada - ${sentido === 'recogida' ? 'Hacia Colegio' : 'Hacia Casas'}`);
 
       if (!socket.connected) {
         socket.connect();
@@ -562,7 +565,8 @@ export default function PantallaConductor({ navigation }) {
         nombre: rutaActivaActual.conductor_nombre || 'Conductor',
         ruta: rutaActivaActual.nombre || 'Sin ruta',
         rutaId: rutaActivaActual.id || null,
-        sentido: sentidoRuta,
+        sentido: sentido,
+        turno: turnoEstudioActivo,
       });
 
       socket.emit('conductor:ubicacion', {
@@ -570,10 +574,13 @@ export default function PantallaConductor({ navigation }) {
         nombre: rutaActivaActual.conductor_nombre || 'Conductor',
         ruta: rutaActivaActual.nombre || 'Sin ruta',
         rutaId: rutaActivaActual.id || null,
-        sentido: sentidoRuta,
+        sentido: sentido,
         latitude: loc.coords.latitude,
         longitude: loc.coords.longitude,
       });
+
+      // Recargar alumnos para obtener el "mapa perfecto" (ausencias filtradas, etc)
+      cargarAlumnos();
 
       intervaloRef.current = setInterval(async () => {
         try {
@@ -585,7 +592,7 @@ export default function PantallaConductor({ navigation }) {
             nombre: rutaActivaActual.conductor_nombre || 'Conductor',
             ruta: rutaActivaActual.nombre || 'Sin ruta',
             rutaId: rutaActivaActual.id || null,
-            sentido: sentidoRuta,
+            sentido: sentido,
             latitude: locActual.coords.latitude,
             longitude: locActual.coords.longitude,
           });
@@ -646,11 +653,10 @@ export default function PantallaConductor({ navigation }) {
     agregarEvento('Ruta finalizada');
 
     const rutaActivaActual = rutas[0] || {};
-    const sentidoRuta = new Date().getHours() < 12 ? 'casa_a_colegio' : 'colegio_a_casa';
     socket.emit('conductor:fin_ruta', {
       conductorId: conductorId || CONDUCTOR_ID_DEMO,
       rutaId: rutaActivaActual.id || null,
-      sentido: sentidoRuta,
+      sentido: sentido,
     });
     socket.disconnect();
   };
@@ -846,29 +852,7 @@ export default function PantallaConductor({ navigation }) {
           </View>
         </View>
 
-        {/* SELECTOR DE TURNO */}
-        <View style={styles.turnoSelectorContainer}>
-          <TouchableOpacity
-            style={[styles.turnoBtn, turno === 'mañana' && styles.turnoBtnActivo]}
-            onPress={() => setTurno('mañana')}
-          >
-            <Clock size={12} color={turno === 'mañana' ? '#fff' : THEME.textSecondary} strokeWidth={2.5} />
-            <Text style={[styles.turnoBtnTexto, turno === 'mañana' && styles.turnoBtnTextoActivo]}>
-              Ruta matutina
-            </Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.turnoBtn, turno === 'tarde' && styles.turnoBtnActivo]}
-            onPress={() => setTurno('tarde')}
-          >
-            <Clock size={12} color={turno === 'tarde' ? '#fff' : THEME.textSecondary} strokeWidth={2.5} />
-            <Text style={[styles.turnoBtnTexto, turno === 'tarde' && styles.turnoBtnTextoActivo]}>
-              Ruta vespertina
-            </Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* TABS COMPACTOS */}
+        {/* TABS COMPACTOS - AHORA ARRIBA */}
         <View style={styles.tabsContainer}>
           <View style={styles.tabs}>
             <TouchableOpacity
@@ -911,6 +895,54 @@ export default function PantallaConductor({ navigation }) {
           {tabActiva === 'control' ? (
             // ========== TAB DE CONTROL DE RUTA ==========
             <View style={styles.tabContent}>
+              {/* SELECTOR DE TURNO - MOVIDO AQUÍ */}
+              <View style={[styles.turnoSelectorContainer, { marginHorizontal: -16, marginTop: -16, marginBottom: 16 }]}>
+                <TouchableOpacity
+                  style={[styles.turnoBtn, turno === 'mañana' && styles.turnoBtnActivo]}
+                  onPress={() => setTurno('mañana')}
+                  disabled={rutaActiva}
+                >
+                  <Clock size={12} color={turno === 'mañana' ? '#fff' : THEME.textSecondary} strokeWidth={2.5} />
+                  <Text style={[styles.turnoBtnTexto, turno === 'mañana' && styles.turnoBtnTextoActivo]}>
+                    Ruta matutina
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.turnoBtn, turno === 'tarde' && styles.turnoBtnActivo]}
+                  onPress={() => setTurno('tarde')}
+                  disabled={rutaActiva}
+                >
+                  <Clock size={12} color={turno === 'tarde' ? '#fff' : THEME.textSecondary} strokeWidth={2.5} />
+                  <Text style={[styles.turnoBtnTexto, turno === 'tarde' && styles.turnoBtnTextoActivo]}>
+                    Ruta vespertina
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* SELECTOR DE SENTIDO - MOVIDO AQUÍ */}
+              <View style={[styles.turnoSelectorContainer, { marginHorizontal: -16, marginTop: -16, marginBottom: 16, borderBottomWidth: 1 }]}>
+                <TouchableOpacity
+                  style={[styles.turnoBtn, sentido === 'recogida' && styles.turnoBtnActivo]}
+                  onPress={() => setSentido('recogida')}
+                  disabled={rutaActiva}
+                >
+                  <MapPin size={12} color={sentido === 'recogida' ? '#fff' : THEME.textSecondary} strokeWidth={2.5} />
+                  <Text style={[styles.turnoBtnTexto, sentido === 'recogida' && styles.turnoBtnTextoActivo]}>
+                    Hacia Colegio
+                  </Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={[styles.turnoBtn, sentido === 'entrega' && styles.turnoBtnActivo]}
+                  onPress={() => setSentido('entrega')}
+                  disabled={rutaActiva}
+                >
+                  <Home size={12} color={sentido === 'entrega' ? '#fff' : THEME.textSecondary} strokeWidth={2.5} />
+                  <Text style={[styles.turnoBtnTexto, sentido === 'entrega' && styles.turnoBtnTextoActivo]}>
+                    Hacia Casas
+                  </Text>
+                </TouchableOpacity>
+              </View>
+
               {/* ESTADO DE RUTA */}
               <View style={styles.tarjetaEstado}>
                 <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -1159,6 +1191,22 @@ export default function PantallaConductor({ navigation }) {
                     >
                       <View style={styles.markerConductor}>
                         <Navigation size={18} color="#fff" strokeWidth={2.5} />
+                      </View>
+                    </Marker>
+                  )}
+
+                  {/* Marcador del Colegio (Meta Final) */}
+                  {rutas[0]?.colegio_latitude && rutas[0]?.colegio_longitude && (
+                    <Marker
+                      coordinate={{ 
+                        latitude: Number(rutas[0].colegio_latitude), 
+                        longitude: Number(rutas[0].colegio_longitude) 
+                      }}
+                      title="Colegio (Meta Final)"
+                      description={rutas[0].colegio_nombre}
+                    >
+                      <View style={[styles.markerAlumno, { backgroundColor: THEME.secondary, borderRadius: 8 }]}>
+                        <GraduationCap size={16} color="#fff" strokeWidth={2.5} />
                       </View>
                     </Marker>
                   )}
@@ -2746,7 +2794,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 12,
     right: 12,
-    bottom: 70, // Levantado para evitar la barra de navegación y mejorar acceso
+    bottom: 20, // Elevado para dar espacio al mapa y estar sobre la barra del sistema
     backgroundColor: 'rgba(255,255,255,0.98)',
     padding: 12,
     borderRadius: 16,

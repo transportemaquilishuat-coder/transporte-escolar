@@ -1,6 +1,6 @@
 import { enviarNotificacionLocal } from '../services/notificaciones';
 import socket from '../config/socket';
-import MapView, { Marker, PROVIDER_GOOGLE } from 'react-native-maps';
+import MapView, { Marker, PROVIDER_GOOGLE } from '../components/MapaSeguro';
 import { useState, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
@@ -109,6 +109,8 @@ export default function PantallaConductor({ navigation }) {
   const intervaloRef = useRef(null);
   const abordajesEnProcesoRef = useRef(new Set());
   const [tabActiva, setTabActiva] = useState('mapa');
+  const mapRef = useRef(null);
+  const [mapRenderKey, setMapRenderKey] = useState(0);
   const [turno, setTurno] = useState(() => {
     const hora = new Date().getHours();
     return (hora >= 5 && hora < 12) ? 'mañana' : 'tarde';
@@ -131,6 +133,26 @@ export default function PantallaConductor({ navigation }) {
   const [cargandoAlertas, setCargandoAlertas] = useState(false);
 
   const alturaMapaConductor = Math.max(430, Math.min(640, windowHeight - 165));
+
+  const obtenerRegionMapa = () => ({
+    latitude: ubicacion?.latitude || 13.68935,
+    longitude: ubicacion?.longitude || -89.18718,
+    latitudeDelta: 0.05,
+    longitudeDelta: 0.05,
+  });
+
+  const cambiarTabActiva = (tab) => {
+    setTabActiva(tab);
+    if (tab === 'mapa') {
+      setMapRenderKey((prev) => prev + 1);
+    }
+  };
+
+  const prepararMapaConductor = () => {
+    setTimeout(() => {
+      mapRef.current?.animateToRegion?.(obtenerRegionMapa(), 250);
+    }, 100);
+  };
 
   // Sockets para alertas en tiempo real (NUEVO)
   useEffect(() => {
@@ -857,7 +879,7 @@ export default function PantallaConductor({ navigation }) {
           <View style={styles.tabs}>
             <TouchableOpacity
               style={[styles.tab, tabActiva === 'control' && styles.tabActiva]}
-              onPress={() => setTabActiva('control')}
+              onPress={() => cambiarTabActiva('control')}
             >
               <Activity size={12} color={tabActiva === 'control' ? '#fff' : THEME.textSecondary} strokeWidth={2} />
               <Text style={[styles.tabTexto, tabActiva === 'control' && styles.tabTextoActivo]}>
@@ -866,7 +888,7 @@ export default function PantallaConductor({ navigation }) {
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.tab, tabActiva === 'mapa' && styles.tabActiva]}
-              onPress={() => setTabActiva('mapa')}
+              onPress={() => cambiarTabActiva('mapa')}
             >
               <MapPin size={12} color={tabActiva === 'mapa' ? '#fff' : THEME.textSecondary} strokeWidth={2} />
               <Text style={[styles.tabTexto, tabActiva === 'mapa' && styles.tabTextoActivo]}>
@@ -875,7 +897,7 @@ export default function PantallaConductor({ navigation }) {
             </TouchableOpacity>
             <TouchableOpacity
               style={[styles.tab, tabActiva === 'alumnos' && styles.tabActiva]}
-              onPress={() => setTabActiva('alumnos')}
+              onPress={() => cambiarTabActiva('alumnos')}
             >
               <Users size={12} color={tabActiva === 'alumnos' ? '#fff' : THEME.textSecondary} strokeWidth={2} />
               <Text style={[styles.tabTexto, tabActiva === 'alumnos' && styles.tabTextoActivo]}>
@@ -1174,14 +1196,13 @@ export default function PantallaConductor({ navigation }) {
             <View style={[styles.tabContent, styles.mapaTabContent]}>
               <View style={[styles.mapContainer, { height: alturaMapaConductor }]}>
                 <MapView
+                  key={`mapa-conductor-${mapRenderKey}`}
+                  ref={mapRef}
                   provider={PROVIDER_GOOGLE}
                   style={styles.map}
-                  initialRegion={{
-                    latitude: ubicacion?.latitude || 13.68935,
-                    longitude: ubicacion?.longitude || -89.18718,
-                    latitudeDelta: 0.05,
-                    longitudeDelta: 0.05,
-                  }}
+                  initialRegion={obtenerRegionMapa()}
+                  loadingEnabled
+                  onMapReady={prepararMapaConductor}
                 >
                   {/* Marcador del Conductor */}
                   {ubicacion && (
@@ -2777,6 +2798,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 12,
     left: 12,
+    zIndex: 10,
     maxWidth: 230,
     backgroundColor: 'rgba(255,255,255,0.92)',
     paddingVertical: 9,
@@ -2795,6 +2817,7 @@ const styles = StyleSheet.create({
     left: 12,
     right: 12,
     bottom: 20, // Elevado para dar espacio al mapa y estar sobre la barra del sistema
+    zIndex: 20,
     backgroundColor: 'rgba(255,255,255,0.98)',
     padding: 12,
     borderRadius: 16,

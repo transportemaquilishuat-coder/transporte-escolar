@@ -1229,14 +1229,14 @@ export default function PantallaPadre({ navigation }) {
       });
 
       const esPendiente = response.status === 202;
+      const datosRespuesta = await response.json().catch(() => ({}));
 
       if (!response.ok && !esPendiente) {
-        const errorData = await response.json().catch(() => ({}));
-        if (esErrorAprobacionRuta(response.status, errorData)) {
+        if (esErrorAprobacionRuta(response.status, datosRespuesta)) {
           mostrarReglaAprobacionRuta();
           return;
         }
-        throw new Error(errorData.error || 'No se pudo guardar el punto de recogida');
+        throw new Error(datosRespuesta.error || 'No se pudo guardar el punto de recogida');
       }
 
       setPuntoRecogida(coords);
@@ -1246,6 +1246,8 @@ export default function PantallaPadre({ navigation }) {
       
       // Persistir que ya se configuró el punto para este hijo (y otros si aplica)
       if (!esPendiente) {
+        const cNombre = datosRespuesta.conductorNombre || hijoSeleccionado.conductorNombre || '';
+        
         if (aplicarATodos) {
           const promesas = hijos.flatMap(h => [
             AsyncStorage.setItem(`punto_configurado_${h.id}`, 'true'),
@@ -1266,12 +1268,13 @@ export default function PantallaPadre({ navigation }) {
 
         Alert.alert(
           '¡Listo!', 
-          `El punto de recogida y entrega de ${hijoSeleccionado.nombre.split(' ')[0]} ha sido establecido. Para cualquier cambio futuro en este punto, el conductor ${hijoSeleccionado.conductorNombre || ''} deberá autorizarlo.`
+          `El punto de recogida y entrega de ${hijoSeleccionado.nombre.split(' ')[0]} ha sido establecido. Para cualquier cambio futuro en este punto, el conductor ${cNombre} deberá autorizarlo.`
         );
       } else {
+        const cNombre = datosRespuesta.conductorNombre || hijoSeleccionado.conductorNombre || 'del bus';
         Alert.alert(
           'Solicitud enviada',
-          `El cambio de punto de recogida para ${hijoSeleccionado.nombre.split(' ')[0]} requiere autorización del conductor. Te notificaremos cuando sea aprobado.`
+          `El cambio de punto de recogida para ${hijoSeleccionado.nombre.split(' ')[0]} requiere autorización del conductor ${cNombre}. Te notificaremos cuando sea aprobado.`
         );
       }
     } catch (e) {

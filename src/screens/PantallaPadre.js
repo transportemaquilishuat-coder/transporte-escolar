@@ -1266,12 +1266,12 @@ export default function PantallaPadre({ navigation }) {
 
         Alert.alert(
           '¡Listo!', 
-          'El punto de recogida y entrega ha sido establecido.'
+          `El punto de recogida y entrega de ${hijoSeleccionado.nombre.split(' ')[0]} ha sido establecido. Para cualquier cambio futuro en este punto, el conductor ${hijoSeleccionado.conductorNombre || ''} deberá autorizarlo.`
         );
       } else {
         Alert.alert(
           'Solicitud enviada',
-          'El cambio de punto de recogida requiere autorización del conductor. Te notificaremos cuando sea aprobado.'
+          `El cambio de punto de recogida para ${hijoSeleccionado.nombre.split(' ')[0]} requiere autorización del conductor. Te notificaremos cuando sea aprobado.`
         );
       }
     } catch (e) {
@@ -1525,7 +1525,7 @@ export default function PantallaPadre({ navigation }) {
               <Text style={styles.pickupHintTexto}>
                 {puntoSugeridoPorDireccion
                   ? `Aproximamos el punto de ${hijoSeleccionado?.nombre.split(' ')[0]} con su direccion.`
-                  : 'Manten presionado el mapa para definir el punto exacto de recogida'}
+                  : 'Mantén oprimido el dedo en el punto exacto de entrega y recogida de tu hijo.'}
               </Text>
             </View>
             {puntoSugeridoPorDireccion && (

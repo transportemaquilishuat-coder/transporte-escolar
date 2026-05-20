@@ -12,17 +12,19 @@ import { enviarNotificacionLocal, escucharNotificaciones } from '../services/not
 import fetchWithAuth, {
   vincularConCodigo,
   generarInvitacionPadre,
+  compartirSeguimientoPorTelefono,
   obtenerCambiosProgramados,
   crearCambioProgramado,
   eliminarCambioProgramado
 } from '../services/api';
 import * as Speech from 'expo-speech';
 import * as Location from 'expo-location';
+import * as Contacts from 'expo-contacts';
 import {
   Bus, Home, Phone, Volume2, VolumeX, AlertTriangle, AlertCircle,
   Check, X, MapPin, Clock, User,
   LogOut, Plus, Users, CreditCard,
-  Sun, CloudRain, Wind, Car, Activity, Bell, Edit3
+  Sun, CloudRain, Wind, Car, Activity, Bell, Edit3, Search
 } from 'lucide-react-native';
 import { cargarSesionPersistida, limpiarSesion, obtenerToken, obtenerUsuario } from '../services/session';
 
@@ -286,7 +288,7 @@ export default function PantallaPadre({ navigation }) {
   const [avisoVozDado, setAvisoVozDado] = useState(false);
 
   // Multi-padre
-  const [codigoInvitacion, setCodigoInvitacion] = useState(null);
+  const [telefonoInvitado, setTelefonoInvitado] = useState('');
   const [mostrarModalInvitacion, setMostrarModalInvitacion] = useState(false);
   const [generandoInvitacion, setGenerandoInvitacion] = useState(false);
 
@@ -1104,17 +1106,43 @@ export default function PantallaPadre({ navigation }) {
     }
   };
 
-  const handleGenerarInvitacion = async () => {
-    if (!hijoSeleccionado) return;
+  const handleCompartirPorTelefono = async () => {
+    if (!hijoSeleccionado || !telefonoInvitado.trim()) {
+      Alert.alert('Error', 'Ingresa un número de teléfono válido.');
+      return;
+    }
     setGenerandoInvitacion(true);
     try {
-      const res = await generarInvitacionPadre(hijoSeleccionado.id);
-      setCodigoInvitacion(res.codigo);
-      setMostrarModalInvitacion(true);
+      await compartirSeguimientoPorTelefono(hijoSeleccionado.id, telefonoInvitado);
+      Alert.alert('¡Éxito!', 'Seguimiento compartido correctamente. El usuario ya puede ver al estudiante en su aplicación.');
+      setMostrarModalInvitacion(false);
+      setTelefonoInvitado('');
     } catch (e) {
-      Alert.alert('Error', 'No se pudo generar el codigo de invitacion.');
+      Alert.alert('Error', e.message || 'No se pudo compartir el seguimiento. Asegúrate de que el número esté registrado.');
     } finally {
       setGenerandoInvitacion(false);
+    }
+  };
+
+  const handleSeleccionarContacto = async () => {
+    try {
+      const { status } = await Contacts.requestPermissionsAsync();
+      if (status === 'granted') {
+        const contact = await Contacts.presentContactPickerAsync();
+        if (contact && contact.phoneNumbers && contact.phoneNumbers.length > 0) {
+          // Tomar el primer número y limpiar caracteres no numéricos
+          const num = contact.phoneNumbers[0].number;
+          const limpio = num.replace(/[^\d]/g, '');
+          // Si tiene más de 8 dígitos (ej: 50370001122), dejamos los últimos 8 que es el formato estándar en SV
+          const final = limpio.length > 8 ? limpio.slice(-8) : limpio;
+          setTelefonoInvitado(final);
+        }
+      } else {
+        Alert.alert('Permiso denegado', 'Necesitamos acceso a tus contactos para usar esta función.');
+      }
+    } catch (e) {
+      console.log('Error seleccionando contacto:', e);
+      Alert.alert('Error', 'No se pudo abrir la lista de contactos.');
     }
   };
 
@@ -2299,28 +2327,62 @@ export default function PantallaPadre({ navigation }) {
         </View>
       </Modal>
 
-      {/* MODAL INVITACION PADRE */}
+      {/* MODAL INVITACION PADRE (AHORA COMPARTIR POR TELEFONO) */}
       <Modal visible={mostrarModalInvitacion} transparent animationType="fade">
         <View style={styles.modalOverlayCenter}>
           <View style={styles.modalCardCenter}>
+            <TouchableOpacity 
+              onPress={() => {
+                setMostrarModalInvitacion(false);
+                setTelefonoInvitado('');
+              }} 
+              style={{ position: 'absolute', right: 16, top: 16, zIndex: 10 }}
+            >
+              <X size={20} color={THEME.textSecondary} />
+            </TouchableOpacity>
+
             <Users size={40} color={THEME.secondary} style={{ alignSelf: 'center', marginBottom: 16 }} />
             <Text style={styles.modalTituloCenter}>Compartir seguimiento</Text>
             <Text style={styles.modalSubtituloCenter}>
-              Entrega este código a la otra persona para que pueda seguir el bus de {hijoSeleccionado?.nombre.split(' ')[0]}.
+              Ingresa el número de teléfono del otro adulto (padre/madre/encargado) para darle acceso al mapa de {hijoSeleccionado?.nombre.split(' ')[0]}.
             </Text>
 
-            <View style={styles.codigoContainer}>
-              <Text style={styles.codigoTexto}>{codigoInvitacion}</Text>
+            <Text style={styles.labelField}>Teléfono del invitado</Text>
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 16 }}>
+              <TextInput
+                style={[styles.modalInput, { flex: 1, fontSize: 18, textAlign: 'center', marginBottom: 0 }]}
+                placeholder="7000-0000"
+                keyboardType="phone-pad"
+                value={telefonoInvitado}
+                onChangeText={setTelefonoInvitado}
+              />
+              <TouchableOpacity 
+                style={{ 
+                  backgroundColor: THEME.background, 
+                  padding: 12, 
+                  borderRadius: 12, 
+                  borderWidth: 1, 
+                  borderColor: THEME.border 
+                }}
+                onPress={handleSeleccionarContacto}
+              >
+                <Search size={24} color={THEME.secondary} />
+              </TouchableOpacity>
             </View>
 
-            <Text style={styles.codigoAviso}>Válido por 48 horas</Text>
-
             <TouchableOpacity
-              style={[styles.modalBtnConfirmar, { width: '100%', marginTop: 20 }]}
-              onPress={() => setMostrarModalInvitacion(false)}
+              style={[styles.modalBtnConfirmar, { width: '100%', marginTop: 10, backgroundColor: THEME.secondary }]}
+              onPress={handleCompartirPorTelefono}
+              disabled={generandoInvitacion}
             >
-              <Text style={styles.modalBtnConfirmarTexto}>Entendido</Text>
+              {generandoInvitacion ? (
+                <ActivityIndicator color="#fff" size="small" />
+              ) : (
+                <Text style={styles.modalBtnConfirmarTexto}>Compartir acceso</Text>
+              )}
             </TouchableOpacity>
+
+            <Text style={styles.codigoAviso}>El invitado debe tener la app instalada</Text>
           </View>
         </View>
       </Modal>

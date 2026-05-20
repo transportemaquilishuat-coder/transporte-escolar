@@ -162,6 +162,7 @@ export default function PantallaPadre({ navigation }) {
     direccion: '',
     turno_estudio: 'matutino',
     fecha_inicio: new Date().toISOString().split('T')[0],
+    fecha_fin: '', // Añadido campo de fin
     mismo_punto: true,
   });
 
@@ -761,10 +762,13 @@ export default function PantallaPadre({ navigation }) {
   const cargarHijos = async () => {
     try {
       const data = await fetchWithAuth('/padres/mis-hijos');
-      const listaHijos = data.hijos || [];
+      const listaHijos = data?.hijos || data || [];
       
-      // Asegurar que no haya duplicados por ID (Gobernanza de datos)
-      const hijosUnicos = Array.from(new Map(listaHijos.map(h => [h.id, h])).values());
+      // Asegurar que sea un array
+      const safeLista = Array.isArray(listaHijos) ? listaHijos : [];
+      
+      // Asegurar que no haya duplicados por ID
+      const hijosUnicos = Array.from(new Map(safeLista.map(h => [h.id, h])).values());
       setHijos(hijosUnicos);
 
       if (hijosUnicos.length > 0) {
@@ -777,7 +781,9 @@ export default function PantallaPadre({ navigation }) {
         setHijoSeleccionadoId(null);
       }
     } catch (e) {
-      console.log('Error cargando hijos:', e);
+      console.log('Error cargando hijos (posiblemente ninguno vinculado):', e.message);
+      setHijos([]);
+      setHijoSeleccionadoId(null);
     } finally {
       setCargandoHijos(false);
     }
@@ -1032,6 +1038,7 @@ export default function PantallaPadre({ navigation }) {
             turno_estudio: datosNuevoAlumno.turno_estudio,
             turnoEstudio: datosNuevoAlumno.turno_estudio,
             fecha_inicio: datosNuevoAlumno.fecha_inicio,
+            fecha_fin: datosNuevoAlumno.fecha_fin,
           }
         } : {})
       };
@@ -2254,6 +2261,20 @@ export default function PantallaPadre({ navigation }) {
                     value={datosNuevoAlumno.fecha_inicio}
                     onChangeText={(v) => setDatosNuevoAlumno({...datosNuevoAlumno, fecha_inicio: v})}
                   />
+
+                  <Text style={styles.labelField}>Fecha finalización de servicio</Text>
+                  <TextInput
+                    style={styles.modalInput}
+                    placeholder="AAAA-MM-DD"
+                    value={datosNuevoAlumno.fecha_fin}
+                    onChangeText={(v) => setDatosNuevoAlumno({...datosNuevoAlumno, fecha_fin: v})}
+                  />
+                  <View style={styles.campoAyudaNota}>
+                    <AlertCircle size={14} color={THEME.textSecondary} />
+                    <Text style={styles.campoAyudaNotaTexto}>
+                      Nota: El servicio de transporte no está disponible durante períodos de vacaciones escolares.
+                    </Text>
+                  </View>
 
                   <Text style={styles.labelField}>Direccion de residencia</Text>
                   <TextInput
@@ -4232,5 +4253,23 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: THEME.text,
     fontWeight: '600',
+  },
+  campoAyudaNota: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: '#F3F4F6',
+    borderRadius: 8,
+    padding: 10,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#E5E7EB',
+  },
+  campoAyudaNotaTexto: {
+    flex: 1,
+    fontSize: 11,
+    color: THEME.textSecondary,
+    fontWeight: '600',
+    lineHeight: 15,
   },
 });

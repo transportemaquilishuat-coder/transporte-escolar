@@ -594,16 +594,18 @@ export default function PantallaPadre({ navigation }) {
         setPuntoSugeridoPorDireccion(false);
       } else {
         // HIJO NO TIENE PUNTO DE RECOGIDA
-        // Verificar si otro hijo SI TIENE punto de recogida para sugerirlo (Solicitado por el usuario)
+        // Notificar que debe ubicar el punto y verificar si puede copiar el de un hermano
         if (!hijosPromptedLocationRef.current.has(hijoSeleccionado.id)) {
+          hijosPromptedLocationRef.current.add(hijoSeleccionado.id);
+          
           const otroHijoConPunto = hijos.find(h => h.id !== hijoSeleccionado.id && h.latitude && h.longitude);
+          
           if (otroHijoConPunto) {
-            hijosPromptedLocationRef.current.add(hijoSeleccionado.id);
             Alert.alert(
               'Punto de recogida',
-              `Tu hijo ${otroHijoConPunto.nombre.split(' ')[0]} ya tiene un punto de recogida definido. ¿Deseas usar el mismo para ${hijoSeleccionado.nombre.split(' ')[0]}?`,
+              `Tu hijo ${otroHijoConPunto.nombre.split(' ')[0]} ya tiene un punto de recogida definido. ¿Deseas usar el mismo para ${hijoSeleccionado.nombre.split(' ')[0]}? O puedes ubicar uno nuevo manteniendo presionado el dedo en el mapa.\n\nNota: Cualquier cambio futuro debe ser autorizado por el conductor.`,
               [
-                { text: 'No, definir otro', style: 'cancel' },
+                { text: 'Definir nuevo', style: 'cancel' },
                 { 
                   text: 'Sí, usar el mismo', 
                   onPress: () => {
@@ -615,6 +617,12 @@ export default function PantallaPadre({ navigation }) {
                   }
                 }
               ]
+            );
+          } else {
+            Alert.alert(
+              'Ubicación GPS requerida',
+              `Para comenzar, debes ubicar el punto exacto de recogida y entrega de ${hijoSeleccionado.nombre.split(' ')[0]} manteniendo presionado el dedo sobre el mapa.\n\nImportante: Por seguridad, cambios futuros de dirección deberán ser autorizados por el conductor.`,
+              [{ text: 'Entendido' }]
             );
           }
         }
@@ -1040,7 +1048,9 @@ export default function PantallaPadre({ navigation }) {
             fecha_inicio: datosNuevoAlumno.fecha_inicio,
             fecha_fin: datosNuevoAlumno.fecha_fin,
           }
-        } : {})
+        } : {
+          alumnoId: hijoSeleccionado?.id
+        })
       };
 
       const res = await fetch(`${SERVIDOR}/api/vinculaciones/vincular-con-codigo`, {
@@ -1094,7 +1104,7 @@ export default function PantallaPadre({ navigation }) {
 
       Alert.alert(
         '¡Listo!',
-        `Vinculación exitosa. ${datos.desc || ''}`,
+        `Vinculación exitosa. ${datos.desc || ''}\n\nAhora debes ubicar el punto GPS exacto para la recogida y entrega. Recuerda que cambios futuros deberán ser autorizados por el conductor.`,
         [
           {
             text: 'Configurar recogida',
@@ -1379,6 +1389,8 @@ export default function PantallaPadre({ navigation }) {
     ? 'El punto de recogida ya esta definido. Coordina cualquier cambio con el conductor.'
     : 'La direccion ya esta registrada. Coordina cualquier cambio con el conductor.';
 
+  const hayHijosVinculados = hijos.some(h => h.rutaId || h.conductorId);
+
   return (
     <View style={styles.container}>
       {/* HEADER */}
@@ -1457,21 +1469,21 @@ export default function PantallaPadre({ navigation }) {
         </View>
       )}
       <View style={styles.mapaContainer}>
-        {/* BANNER FLOTANTE +VINCULAR HIJO (Solicitado por el usuario) */}
+        {/* BANNER FLOTANTE VINCULA A TU HIJO (Solicitado por el usuario) */}
         <TouchableOpacity 
           style={[
             styles.bannerVinculacion,
-            hijos.length > 0 && styles.bannerVinculacionCompacto,
+            hayHijosVinculados && styles.bannerVinculacionCompacto,
           ]}
           onPress={() => abrirModalVincularHijo({ requiereDatosAlumno: hijos.length === 0 })}
           activeOpacity={0.9}
         >
-          {hijos.length === 0 ? (
+          {!hayHijosVinculados ? (
             <>
           <View style={styles.bannerVinculacionContent}>
             <Plus size={18} color="#fff" strokeWidth={3} />
             <View style={styles.bannerVinculacionTextContainer}>
-              <Text style={styles.bannerVinculacionTitulo}>Vincular hijo</Text>
+              <Text style={styles.bannerVinculacionTitulo}>Vincula a tu hijo</Text>
               <Text style={styles.bannerVinculacionDesc}>Usa el código del conductor</Text>
             </View>
           </View>

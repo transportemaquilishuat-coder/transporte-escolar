@@ -34,6 +34,11 @@ const SERVIDOR = API_BASE_URL;
 const GOOGLE_API_KEY = 'AIzaSyDVaVcUL_e_lO0nD29QUfOfl0u3RUUFEdM';
 const CASA_DEFAULT = { latitude: 13.7020, longitude: -89.2250 };
 const PAIS_GEOCODING = 'El Salvador';
+const TIPOS_CAMBIO_RUTA = [
+  { key: 'recogida', label: 'Recogida' },
+  { key: 'entrega', label: 'Entrega' },
+  { key: 'ambos', label: 'Ambos' },
+];
 
 // Función para obtener ETA real usando Google Directions API
 const obtenerETADeGoogle = async (origen, destino) => {
@@ -298,7 +303,7 @@ export default function PantallaPadre({ navigation }) {
   const [cargandoCambios, setCargandoCambios] = useState(false);
   const [modalNuevoCambio, setModalNuevoCambio] = useState(false);
   const [datosNuevoCambio, setDatosNuevoCambio] = useState({
-    tipo: 'devolucion',
+    tipo: 'entrega',
     parada: '',
     nota: '',
     fecha: new Date().toISOString().split('T')[0],
@@ -1080,6 +1085,7 @@ export default function PantallaPadre({ navigation }) {
               method: 'PUT',
               headers: { 'Content-Type': 'application/json', ...(await obtenerAuthHeaders()) },
               body: JSON.stringify({
+                tipo: 'recogida',
                 parada: otroHijoConPunto.parada || `Punto ${Number(otroHijoConPunto.latitude).toFixed(5)}`,
                 latitude: Number(otroHijoConPunto.latitude),
                 longitude: Number(otroHijoConPunto.longitude),
@@ -1141,6 +1147,16 @@ export default function PantallaPadre({ navigation }) {
     }
   };
 
+  const handleGenerarInvitacion = () => {
+    if (!hijoSeleccionado) {
+      Alert.alert('Selecciona un estudiante', 'Elige un estudiante antes de compartir el seguimiento.');
+      return;
+    }
+
+    setTelefonoInvitado('');
+    setMostrarModalInvitacion(true);
+  };
+
   const handleSeleccionarContacto = async () => {
     try {
       const { status } = await Contacts.requestPermissionsAsync();
@@ -1194,7 +1210,7 @@ export default function PantallaPadre({ navigation }) {
       });
       setModalNuevoCambio(false);
       setDatosNuevoCambio({
-        tipo: 'devolucion',
+        tipo: 'entrega',
         parada: '',
         nota: '',
         fecha: new Date().toISOString().split('T')[0],
@@ -1261,6 +1277,7 @@ export default function PantallaPadre({ navigation }) {
       } catch (e) { }
 
       const payload = {
+        tipo: 'recogida',
         parada,
         latitude: coords.latitude,
         longitude: coords.longitude,
@@ -2448,14 +2465,14 @@ export default function PantallaPadre({ navigation }) {
 
               <Text style={styles.labelField}>Tipo de trayecto</Text>
               <View style={styles.tipoSelector}>
-                {['recogida', 'devolucion', 'ambos'].map((t) => (
+                {TIPOS_CAMBIO_RUTA.map((opcion) => (
                   <TouchableOpacity
-                    key={t}
-                    style={[styles.tipoOption, datosNuevoCambio.tipo === t && styles.tipoOptionActiva]}
-                    onPress={() => setDatosNuevoCambio({ ...datosNuevoCambio, tipo: t })}
+                    key={opcion.key}
+                    style={[styles.tipoOption, datosNuevoCambio.tipo === opcion.key && styles.tipoOptionActiva]}
+                    onPress={() => setDatosNuevoCambio({ ...datosNuevoCambio, tipo: opcion.key })}
                   >
-                    <Text style={[styles.tipoOptionText, datosNuevoCambio.tipo === t && styles.tipoOptionTextActivo]}>
-                      {t.charAt(0).toUpperCase() + t.slice(1)}
+                    <Text style={[styles.tipoOptionText, datosNuevoCambio.tipo === opcion.key && styles.tipoOptionTextActivo]}>
+                      {opcion.label}
                     </Text>
                   </TouchableOpacity>
                 ))}

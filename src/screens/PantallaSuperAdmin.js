@@ -125,6 +125,7 @@ export default function PantallaSuperAdmin({ navigation }) {
   const [rutas, setRutas] = useState([]);
   const [alumnos, setAlumnos] = useState([]);
   const [conductores, setConductores] = useState([]);
+  const [conductoresIndependientes, setConductoresIndependientes] = useState([]);
   const [configuracion, setConfiguracion] = useState([]);
   const [error, setError] = useState('');
 
@@ -151,6 +152,7 @@ export default function PantallaSuperAdmin({ navigation }) {
   const [eliminandoColegioId, setEliminandoColegioId] = useState(null);
   const [busquedaColegioUsuarios, setBusquedaColegioUsuarios] = useState('');
   const [busquedaUsuario, setBusquedaUsuario] = useState('');
+  const [busquedaConductorIndependiente, setBusquedaConductorIndependiente] = useState('');
   const [colegioUsuariosSeleccionado, setColegioUsuariosSeleccionado] = useState(null);
   const [usuariosColegio, setUsuariosColegio] = useState([]);
   const [loadingUsuarios, setLoadingUsuarios] = useState(false);
@@ -392,7 +394,7 @@ export default function PantallaSuperAdmin({ navigation }) {
     setError('');
 
     try {
-      const [dash, rut, alum, cond, config, superConfig, agenda] = await Promise.all([
+      const [dash, rut, alum, cond, config, superConfig, agenda, conductoresInd] = await Promise.all([
         fetchJsonSeguro(`${SERVIDOR}/api/admin/dashboard`, {}, null),
         fetchJsonSeguro(`${SERVIDOR}/api/admin/rutas`, {}, { rutas: [] }),
         fetchJsonSeguro(`${SERVIDOR}/api/admin/alumnos`, {}, { alumnos: [] }),
@@ -402,12 +404,16 @@ export default function PantallaSuperAdmin({ navigation }) {
         token
           ? fetchSuperAdmin(`/api/super-admin/alertas/recogida-5min/agenda?mes=${mesActual}&anio=${anioActual}`).catch(() => ({ alertas: [] }))
           : Promise.resolve({ alertas: [] }),
+        token
+          ? fetchSuperAdmin('/api/super-admin/conductores-independientes').catch(() => ({ conductores: [] }))
+          : Promise.resolve({ conductores: [] }),
       ]);
 
       setDashboard(dash);
       setRutas(rut?.rutas || []);
       setAlumnos(alum?.alumnos || []);
       setConductores(cond?.conductores || []);
+      setConductoresIndependientes(conductoresInd?.conductores || []);
       setConfiguracion(config?.configuracion || []);
 
       if (superConfig?.configuracion) {
@@ -501,9 +507,12 @@ export default function PantallaSuperAdmin({ navigation }) {
     { label: 'Colegios', value: colegios.length, color: THEME.info, Icon: Building2 },
     { label: 'Administradores', value: colegios.filter((item) => item.admin_id).length, color: THEME.secondary, Icon: ShieldCheck },
     { label: 'Conductores', value: conductores.length, color: THEME.warning, Icon: Bus },
+    { label: 'Independientes', value: conductoresIndependientes.length, color: THEME.accent, Icon: Route },
     { label: 'Alumnos activos', value: alumnosActivos, color: THEME.success, Icon: Users },
   ];
   const colegiosRecientes = colegios.slice(0, 3);
+  const conductoresIndependientesActivos = conductoresIndependientes.filter((item) => item.activo !== false).length;
+  const alumnosIndependientes = conductoresIndependientes.reduce((total, item) => total + (Number(item.total_alumnos ?? item.totalAlumnos) || 0), 0);
 
   const handleCrearColegio = async () => {
     if (!nuevoColegio.nombre.trim()) {
@@ -601,6 +610,24 @@ export default function PantallaSuperAdmin({ navigation }) {
     ]
       .filter(Boolean)
       .some((valor) => valor.toLowerCase().includes(texto));
+  });
+
+  const conductoresIndependientesFiltrados = conductoresIndependientes.filter((conductor) => {
+    const texto = busquedaConductorIndependiente.trim().toLowerCase();
+    if (!texto) return true;
+
+    const rutasConductor = Array.isArray(conductor.rutas) ? conductor.rutas : [];
+
+    return [
+      conductor.nombre,
+      conductor.email,
+      conductor.telefono,
+      conductor.placa,
+      conductor.ruta_nombre,
+      ...rutasConductor.map((ruta) => ruta.nombre),
+    ]
+      .filter(Boolean)
+      .some((valor) => String(valor).toLowerCase().includes(texto));
   });
 
   const colegiosParaUsuarios = colegios.filter((colegio) => {
@@ -970,6 +997,112 @@ export default function PantallaSuperAdmin({ navigation }) {
           </View>
         </View>
       </Modal>
+    </View>
+  );
+
+  const renderPestanaConductoresIndependientes = () => (
+    <View style={styles.usuariosSection}>
+      <View style={styles.usuariosHeader}>
+        <View style={{ flex: 1 }}>
+          <Text style={styles.sectionTitle}>Conductores independientes</Text>
+          <Text style={styles.usuariosSubtitle}>
+            Conductores sin colegio asignado, con sus rutas propias y alumnos activos.
+          </Text>
+        </View>
+
+        <TouchableOpacity
+          style={styles.usuariosRefreshButton}
+          onPress={() => refrescarVista(true)}
+        >
+          <RefreshCw size={16} color={THEME.primary} strokeWidth={2} />
+          <Text style={styles.usuariosRefreshButtonText}>Actualizar</Text>
+        </TouchableOpacity>
+      </View>
+
+      <TextInput
+        style={styles.colegiosSearch}
+        value={busquedaConductorIndependiente}
+        onChangeText={setBusquedaConductorIndependiente}
+        placeholder="Buscar conductor, correo, placa o ruta"
+        placeholderTextColor={THEME.textSecondary}
+      />
+
+      <View style={[styles.colegiosCounterRow, styles.conductoresCountersRow]}>
+        <View style={styles.colegiosCounterCard}>
+          <Bus size={18} color={THEME.accent} strokeWidth={2} />
+          <Text style={styles.colegiosCounterText}>{conductoresIndependientes.length} conductores</Text>
+        </View>
+        <View style={styles.colegiosCounterCard}>
+          <Check size={18} color={THEME.success} strokeWidth={2} />
+          <Text style={styles.colegiosCounterText}>{conductoresIndependientesActivos} activos</Text>
+        </View>
+        <View style={styles.colegiosCounterCard}>
+          <Users size={18} color={THEME.info} strokeWidth={2} />
+          <Text style={styles.colegiosCounterText}>{alumnosIndependientes} alumnos</Text>
+        </View>
+      </View>
+
+      {conductoresIndependientesFiltrados.length === 0 ? (
+        <View style={styles.usuariosEmptyCard}>
+          <Text style={styles.usuariosEmptyTitle}>
+            {conductoresIndependientes.length === 0 ? 'No hay conductores independientes.' : 'No hay coincidencias.'}
+          </Text>
+          <Text style={styles.usuariosEmptyText}>
+            {conductoresIndependientes.length === 0
+              ? 'Cuando un conductor no tenga colegio asignado aparecera en esta vista.'
+              : 'Prueba con otro nombre, correo, placa o ruta.'}
+          </Text>
+        </View>
+      ) : (
+        conductoresIndependientesFiltrados.map((conductor) => {
+          const rutasConductor = Array.isArray(conductor.rutas) ? conductor.rutas : [];
+          const totalAlumnos = Number(conductor.total_alumnos ?? conductor.totalAlumnos) || 0;
+
+          return (
+            <View key={conductor.id} style={[styles.usuarioCard, conductor.activo === false && { opacity: 0.78 }]}>
+              <View style={styles.usuarioCardHeader}>
+                <View style={[styles.usuarioAvatar, { backgroundColor: `${THEME.accent}16` }]}>
+                  <Bus size={18} color={THEME.accent} strokeWidth={2} />
+                </View>
+                <View style={styles.usuarioInfoBlock}>
+                  <Text style={styles.usuarioNombre}>{conductor.nombre || 'Conductor sin nombre'}</Text>
+                  <Text style={styles.usuarioMeta}>{conductor.email || 'Sin correo registrado'}</Text>
+                </View>
+                <View style={[styles.usuarioRolBadge, { backgroundColor: conductor.activo === false ? '#FEF2F2' : '#ECFDF5' }]}>
+                  <Text style={[styles.usuarioRolBadgeText, { color: conductor.activo === false ? THEME.error : THEME.success }]}>
+                    {conductor.activo === false ? 'Inactivo' : 'Activo'}
+                  </Text>
+                </View>
+              </View>
+
+              <View style={styles.conductorMetaGrid}>
+                <Text style={styles.usuarioMeta}>Telefono: {conductor.telefono || 'Sin telefono'}</Text>
+                <Text style={styles.usuarioMeta}>Placa: {conductor.placa || 'Sin placa'}</Text>
+                <Text style={styles.usuarioMeta}>Alumnos activos: {totalAlumnos}</Text>
+              </View>
+
+              <View style={styles.conductorRutasBlock}>
+                <Text style={styles.conductorRutasTitle}>Rutas propias</Text>
+                {rutasConductor.length > 0 ? (
+                  rutasConductor.map((ruta) => (
+                    <View key={ruta.id} style={styles.conductorRutaChip}>
+                      <Route size={14} color={THEME.info} strokeWidth={2} />
+                      <Text style={styles.conductorRutaText}>{ruta.nombre || `Ruta ${ruta.id}`}</Text>
+                    </View>
+                  ))
+                ) : conductor.ruta_nombre ? (
+                  <View style={styles.conductorRutaChip}>
+                    <Route size={14} color={THEME.info} strokeWidth={2} />
+                    <Text style={styles.conductorRutaText}>{conductor.ruta_nombre}</Text>
+                  </View>
+                ) : (
+                  <Text style={styles.usuarioMeta}>Sin ruta activa asignada.</Text>
+                )}
+              </View>
+            </View>
+          );
+        })
+      )}
     </View>
   );
 
@@ -1737,6 +1870,12 @@ export default function PantallaSuperAdmin({ navigation }) {
                 <Text style={[styles.tabSwitcherText, seccionActiva === 'anuncios' && styles.tabSwitcherTextActive]}>Anuncios</Text>
               </TouchableOpacity>
               <TouchableOpacity
+                style={[styles.tabSwitcherButton, seccionActiva === 'independientes' && styles.tabSwitcherButtonActive]}
+                onPress={() => setSeccionActiva('independientes')}
+              >
+                <Text style={[styles.tabSwitcherText, seccionActiva === 'independientes' && styles.tabSwitcherTextActive]}>Independientes</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
                 style={[styles.tabSwitcherButton, seccionActiva === 'usuarios' && styles.tabSwitcherButtonActive]}
                 onPress={() => setSeccionActiva('usuarios')}
               >
@@ -1869,6 +2008,17 @@ export default function PantallaSuperAdmin({ navigation }) {
                   <ChevronRight size={18} color={THEME.textSecondary} strokeWidth={2} />
                 </TouchableOpacity>
 
+                <TouchableOpacity style={styles.actionCard} onPress={() => setSeccionActiva('independientes')}>
+                  <View style={styles.actionIcon}>
+                    <Bus size={20} color={THEME.accent} strokeWidth={2} />
+                  </View>
+                  <View style={styles.actionText}>
+                    <Text style={styles.actionTitle}>Ver conductores independientes</Text>
+                    <Text style={styles.actionSubtitle}>Revisa conductores sin colegio asignado, sus rutas propias y alumnos activos.</Text>
+                  </View>
+                  <ChevronRight size={18} color={THEME.textSecondary} strokeWidth={2} />
+                </TouchableOpacity>
+
                 <TouchableOpacity style={styles.actionCard} onPress={() => navigation.navigate('Admin')}>
                   <View style={styles.actionIcon}>
                     <Settings2 size={20} color={THEME.primary} strokeWidth={2} />
@@ -1904,12 +2054,19 @@ export default function PantallaSuperAdmin({ navigation }) {
                     <Text style={styles.capacityValue}>{conductores.length}</Text>
                     <Text style={styles.capacityLabel}>Conductores</Text>
                   </View>
+                  <View style={styles.capacityCard}>
+                    <Bus size={18} color={THEME.accent} strokeWidth={2} />
+                    <Text style={styles.capacityValue}>{conductoresIndependientes.length}</Text>
+                    <Text style={styles.capacityLabel}>Independientes</Text>
+                  </View>
                 </View>
               </>
             ) : seccionActiva === 'colegios' ? (
               renderPestanaColegios()
             ) : seccionActiva === 'anuncios' ? (
               renderPestanaAnuncios()
+            ) : seccionActiva === 'independientes' ? (
+              renderPestanaConductoresIndependientes()
             ) : (
               renderPestanaUsuarios()
             )}
@@ -2875,6 +3032,39 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     fontWeight: '600',
   },
+  conductorMetaGrid: {
+    gap: 4,
+  },
+  conductorRutasBlock: {
+    gap: 8,
+    backgroundColor: THEME.background,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: THEME.border,
+    padding: 12,
+  },
+  conductorRutasTitle: {
+    color: THEME.text,
+    fontSize: 13,
+    fontWeight: '800',
+  },
+  conductorRutaChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-start',
+    gap: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#BFDBFE',
+    backgroundColor: '#EFF6FF',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  conductorRutaText: {
+    color: THEME.info,
+    fontSize: 12,
+    fontWeight: '800',
+  },
   tempPasswordLabel: {
     fontSize: 12,
     color: THEME.textSecondary,
@@ -3043,10 +3233,15 @@ const styles = StyleSheet.create({
   },
   colegiosCounterRow: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
     gap: 10,
+  },
+  conductoresCountersRow: {
+    alignItems: 'stretch',
   },
   colegiosCounterCard: {
     flex: 1,
+    minWidth: 150,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,

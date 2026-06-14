@@ -1,6 +1,6 @@
 import { enviarNotificacionLocal } from '../services/notificaciones';
 import socket from '../config/socket';
-import MapView, { Marker, PROVIDER_GOOGLE } from '../components/MapaSeguro';
+import MapView, { Marker, Polyline, PROVIDER_GOOGLE } from '../components/MapaSeguro';
 import { useState, useEffect, useRef } from 'react';
 import {
   View, Text, StyleSheet, TouchableOpacity, ScrollView,
@@ -69,15 +69,33 @@ const THEME = {
   info: '#5856D6',
 };
 
-const TURNOS_ESTUDIO = {
-  mañana: 'matutino',
-  tarde: 'vespertino',
-};
-
 const OPCIONES_TURNO_ESTUDIO = [
   { key: 'matutino', label: 'Matutino' },
   { key: 'vespertino', label: 'Vespertino' },
 ];
+
+const SENTIDOS_RUTA = {
+  CASA_A_COLEGIO: 'casa_a_colegio',
+  COLEGIO_A_CASA: 'colegio_a_casa',
+};
+
+const obtenerConfiguracionRutaPorHora = () => {
+  const hora = new Date().getHours();
+
+  if (hora >= 5 && hora < 12) {
+    return { turno: 'matutino', sentido: SENTIDOS_RUTA.CASA_A_COLEGIO };
+  }
+
+  if (hora >= 12 && hora < 18) {
+    return { turno: 'vespertino', sentido: SENTIDOS_RUTA.CASA_A_COLEGIO };
+  }
+
+  return { turno: 'vespertino', sentido: SENTIDOS_RUTA.COLEGIO_A_CASA };
+};
+
+const obtenerLabelSentido = (sentido) => (
+  sentido === SENTIDOS_RUTA.CASA_A_COLEGIO ? 'Hacia Colegio' : 'Hacia Casas'
+);
 
 const obtenerAuthHeaders = async () => {
   const token = obtenerToken() || await AsyncStorage.getItem('token');
@@ -111,15 +129,9 @@ export default function PantallaConductor({ navigation }) {
   const [tabActiva, setTabActiva] = useState('mapa');
   const mapRef = useRef(null);
   const [mapRenderKey, setMapRenderKey] = useState(0);
-  const [turno, setTurno] = useState(() => {
-    const hora = new Date().getHours();
-    return (hora >= 5 && hora < 12) ? 'mañana' : 'tarde';
-  });
-  const [sentido, setSentido] = useState(() => {
-    const hora = new Date().getHours();
-    return (hora >= 5 && hora < 12) ? 'recogida' : 'entrega';
-  });
-  const turnoEstudioActivo = TURNOS_ESTUDIO[turno] || 'matutino';
+  const configuracionInicialRuta = useRef(obtenerConfiguracionRutaPorHora()).current;
+  const [turno, setTurno] = useState(configuracionInicialRuta.turno);
+  const [sentido, setSentido] = useState(configuracionInicialRuta.sentido);
   const [modalAlumnoVisible, setModalAlumnoVisible] = useState(false);
   const [modalColegioVisible, setModalColegioVisible] = useState(false);
   const [codigoColegio, setCodigoColegio] = useState('');
@@ -428,7 +440,7 @@ export default function PantallaConductor({ navigation }) {
   // ========== FUNCIONES ==========
   const cargarAlumnos = async () => {
     try {
-      const url = `${SERVIDOR}/api/asignaciones/conductor/${conductorId || CONDUCTOR_ID_DEMO}?turno=${turno}&turno_estudio=${turnoEstudioActivo}&sentido=${sentido}`;
+      const url = `${SERVIDOR}/api/asignaciones/conductor/${conductorId || CONDUCTOR_ID_DEMO}?turno=${turno}&turno_estudio=${turno}&sentido=${sentido}`;
       const res = await fetch(url, {
         headers: await obtenerAuthHeaders(),
       });
@@ -576,7 +588,7 @@ export default function PantallaConductor({ navigation }) {
       const rutaActivaActual = rutas[0] || {};
       setUbicacion(loc.coords);
       setRutaActiva(true);
-      agregarEvento(`Ruta iniciada - ${sentido === 'recogida' ? 'Hacia Colegio' : 'Hacia Casas'}`);
+      agregarEvento(`Ruta iniciada - ${obtenerLabelSentido(sentido)} (${turno})`);
 
       if (!socket.connected) {
         socket.connect();
@@ -588,7 +600,7 @@ export default function PantallaConductor({ navigation }) {
         ruta: rutaActivaActual.nombre || 'Sin ruta',
         rutaId: rutaActivaActual.id || null,
         sentido: sentido,
-        turno: turnoEstudioActivo,
+        turno,
       });
 
       socket.emit('conductor:ubicacion', {
@@ -597,6 +609,7 @@ export default function PantallaConductor({ navigation }) {
         ruta: rutaActivaActual.nombre || 'Sin ruta',
         rutaId: rutaActivaActual.id || null,
         sentido: sentido,
+        turno,
         latitude: loc.coords.latitude,
         longitude: loc.coords.longitude,
       });
@@ -615,6 +628,7 @@ export default function PantallaConductor({ navigation }) {
             ruta: rutaActivaActual.nombre || 'Sin ruta',
             rutaId: rutaActivaActual.id || null,
             sentido: sentido,
+            turno,
             latitude: locActual.coords.latitude,
             longitude: locActual.coords.longitude,
           });
@@ -679,6 +693,7 @@ export default function PantallaConductor({ navigation }) {
       conductorId: conductorId || CONDUCTOR_ID_DEMO,
       rutaId: rutaActivaActual.id || null,
       sentido: sentido,
+      turno,
     });
     socket.disconnect();
   };
@@ -812,6 +827,40 @@ export default function PantallaConductor({ navigation }) {
   };
 
   // ========== CÁLCULOS ==========
+  const obtenerPuntosRuta = () => {
+    const puntos = [];
+    
+    // 1. Ubicación actual del conductor (si existe)
+    if (ubicacion) {
+      puntos.push({ latitude: Number(ubicacion.latitude), longitude: Number(ubicacion.longitude) });
+    }
+
+    // 2. Colegio (Meta Final)
+    const colegioCoord = (rutas[0]?.colegio_latitude && rutas[0]?.colegio_longitude) 
+      ? { latitude: Number(rutas[0].colegio_latitude), longitude: Number(rutas[0].colegio_longitude) }
+      : null;
+
+    // Lógica según sentido
+    if (sentido === SENTIDOS_RUTA.COLEGIO_A_CASA && colegioCoord) {
+      // De Colegio a Casas: El colegio suele ser el primer punto o el origen
+      puntos.push(colegioCoord);
+    }
+
+    // 3. Alumnos activos
+    const alumnosPuntos = alumnosActivosEnRuta
+      .filter(a => a.latitude != null && a.longitude != null)
+      .map(a => ({ latitude: Number(a.latitude), longitude: Number(a.longitude) }));
+    
+    puntos.push(...alumnosPuntos);
+
+    if (sentido === SENTIDOS_RUTA.CASA_A_COLEGIO && colegioCoord) {
+      // De Casas a Colegio: El colegio es la meta final
+      puntos.push(colegioCoord);
+    }
+
+    return puntos;
+  };
+
   const totalAbordados = alumnosActivosEnRuta.filter(a => a.estado === 'abordado').length;
   const totalAusentes = alumnos.filter(a => a.ausente).length;
   const totalPendientes = alumnosActivosEnRuta.filter(a => a.estado !== 'abordado').length;
@@ -918,22 +967,22 @@ export default function PantallaConductor({ navigation }) {
                 {/* SELECTOR DE TURNO - MOVIDO AQUÍ */}
                 <View style={[styles.turnoSelectorContainer, { marginHorizontal: -16, marginTop: -16, marginBottom: 16 }]}>
                   <TouchableOpacity
-                    style={[styles.turnoBtn, turno === 'mañana' && styles.turnoBtnActivo]}
-                    onPress={() => setTurno('mañana')}
+                    style={[styles.turnoBtn, turno === 'matutino' && styles.turnoBtnActivo]}
+                    onPress={() => setTurno('matutino')}
                     disabled={rutaActiva}
                   >
-                    <Clock size={12} color={turno === 'mañana' ? '#fff' : THEME.textSecondary} strokeWidth={2.5} />
-                    <Text style={[styles.turnoBtnTexto, turno === 'mañana' && styles.turnoBtnTextoActivo]}>
+                    <Clock size={12} color={turno === 'matutino' ? '#fff' : THEME.textSecondary} strokeWidth={2.5} />
+                    <Text style={[styles.turnoBtnTexto, turno === 'matutino' && styles.turnoBtnTextoActivo]}>
                       Ruta matutina
                     </Text>
                   </TouchableOpacity>
                   <TouchableOpacity
-                    style={[styles.turnoBtn, turno === 'tarde' && styles.turnoBtnActivo]}
-                    onPress={() => setTurno('tarde')}
+                    style={[styles.turnoBtn, turno === 'vespertino' && styles.turnoBtnActivo]}
+                    onPress={() => setTurno('vespertino')}
                     disabled={rutaActiva}
                   >
-                    <Clock size={12} color={turno === 'tarde' ? '#fff' : THEME.textSecondary} strokeWidth={2.5} />
-                    <Text style={[styles.turnoBtnTexto, turno === 'tarde' && styles.turnoBtnTextoActivo]}>
+                    <Clock size={12} color={turno === 'vespertino' ? '#fff' : THEME.textSecondary} strokeWidth={2.5} />
+                    <Text style={[styles.turnoBtnTexto, turno === 'vespertino' && styles.turnoBtnTextoActivo]}>
                       Ruta vespertina
                     </Text>
                   </TouchableOpacity>
@@ -942,22 +991,22 @@ export default function PantallaConductor({ navigation }) {
                 {/* SELECTOR DE SENTIDO - MOVIDO AQUÍ */}
                 <View style={[styles.turnoSelectorContainer, { marginHorizontal: -16, marginTop: -16, marginBottom: 16, borderBottomWidth: 1 }]}>
                   <TouchableOpacity
-                    style={[styles.turnoBtn, sentido === 'recogida' && styles.turnoBtnActivo]}
-                    onPress={() => setSentido('recogida')}
+                    style={[styles.turnoBtn, sentido === SENTIDOS_RUTA.CASA_A_COLEGIO && styles.turnoBtnActivo]}
+                    onPress={() => setSentido(SENTIDOS_RUTA.CASA_A_COLEGIO)}
                     disabled={rutaActiva}
                   >
-                    <MapPin size={12} color={sentido === 'recogida' ? '#fff' : THEME.textSecondary} strokeWidth={2.5} />
-                    <Text style={[styles.turnoBtnTexto, sentido === 'recogida' && styles.turnoBtnTextoActivo]}>
+                    <MapPin size={12} color={sentido === SENTIDOS_RUTA.CASA_A_COLEGIO ? '#fff' : THEME.textSecondary} strokeWidth={2.5} />
+                    <Text style={[styles.turnoBtnTexto, sentido === SENTIDOS_RUTA.CASA_A_COLEGIO && styles.turnoBtnTextoActivo]}>
                       Hacia Colegio
                     </Text>
                   </TouchableOpacity>
                   <TouchableOpacity
-                    style={[styles.turnoBtn, sentido === 'entrega' && styles.turnoBtnActivo]}
-                    onPress={() => setSentido('entrega')}
+                    style={[styles.turnoBtn, sentido === SENTIDOS_RUTA.COLEGIO_A_CASA && styles.turnoBtnActivo]}
+                    onPress={() => setSentido(SENTIDOS_RUTA.COLEGIO_A_CASA)}
                     disabled={rutaActiva}
                   >
-                    <Home size={12} color={sentido === 'entrega' ? '#fff' : THEME.textSecondary} strokeWidth={2.5} />
-                    <Text style={[styles.turnoBtnTexto, sentido === 'entrega' && styles.turnoBtnTextoActivo]}>
+                    <Home size={12} color={sentido === SENTIDOS_RUTA.COLEGIO_A_CASA ? '#fff' : THEME.textSecondary} strokeWidth={2.5} />
+                    <Text style={[styles.turnoBtnTexto, sentido === SENTIDOS_RUTA.COLEGIO_A_CASA && styles.turnoBtnTextoActivo]}>
                       Hacia Casas
                     </Text>
                   </TouchableOpacity>
@@ -1234,10 +1283,10 @@ export default function PantallaConductor({ navigation }) {
                   )}
 
                   {/* Marcadores de Alumnos (Puntos de Recogida) */}
-                  {alumnos.filter(a => a.latitude && a.longitude).map(alumno => (
+                  {alumnosActivosEnRuta.filter(a => a.latitude && a.longitude).map(alumno => (
                     <Marker
                       key={alumno.id}
-                      coordinate={{ latitude: alumno.latitude, longitude: alumno.longitude }}
+                      coordinate={{ latitude: Number(alumno.latitude), longitude: Number(alumno.longitude) }}
                       title={alumno.nombre}
                       description={alumno.parada}
                     >
@@ -1249,6 +1298,16 @@ export default function PantallaConductor({ navigation }) {
                       </View>
                     </Marker>
                   ))}
+
+                  {/* Línea de Ruta (Polyline) - Solo cuando la ruta está activa o hay puntos */}
+                  {alumnosActivosEnRuta.length > 0 && (
+                    <Polyline
+                      coordinates={obtenerPuntosRuta()}
+                      strokeColor={THEME.secondary}
+                      strokeWidth={4}
+                      lineDashPattern={[5, 5]}
+                    />
+                  )}
                 </MapView>
                 
                 <Animated.View

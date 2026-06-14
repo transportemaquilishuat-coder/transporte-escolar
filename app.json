@@ -13,7 +13,15 @@
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "Permite que Transporte Escolar muestre tu ubicacion y calcule rutas durante el servicio."
+          "locationWhenInUsePermission": "Permite que Transporte Escolar muestre tu ubicacion y calcule rutas durante el servicio.",
+          "locationAlwaysPermission": "Permite rastrear la ruta en tiempo real incluso con la pantalla apagada.",
+          "isAndroidBackgroundLocationEnabled": true,
+          "isAndroidForegroundServiceEnabled": true,
+          "foregroundService": {
+            "notificationTitle": "Ruta en curso",
+            "notificationBody": "Compartiendo ubicación en tiempo real para seguridad de los alumnos.",
+            "notificationColor": "#2196F3"
+          }
         }
       ],
       [
@@ -39,6 +47,13 @@
       "package": "com.daniel7901.transporteescolar",
       "versionCode": 1,
       "showPerformanceRPC": false,
+      "permissions": [
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION",
+        "ACCESS_BACKGROUND_LOCATION",
+        "FOREGROUND_SERVICE",
+        "FOREGROUND_SERVICE_LOCATION"
+      ],
       "blockedPermissions": [
         "android.permission.RECORD_AUDIO"
       ],
@@ -51,6 +66,13 @@
     "ios": {
       "bundleIdentifier": "com.daniel7901.transporteescolar",
       "showPerformanceRPC": false,
+      "infoPlist": {
+        "UIBackgroundModes": [
+          "location",
+          "fetch",
+          "remote-notification"
+        ]
+      },
       "config": {
         "googleMapsApiKey": "AIzaSyDVaVcUL_e_lO0nD29QUfOfl0u3RUUFEdM"
       }

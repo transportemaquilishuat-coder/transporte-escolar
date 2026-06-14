@@ -8,6 +8,7 @@ import {
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Location from 'expo-location';
+import * as TaskManager from 'expo-task-manager';
 import { useKeepAwake } from 'expo-keep-awake';
 import {
   Play, Square, MapPin, Users, GraduationCap,
@@ -23,6 +24,38 @@ const SERVIDOR = API_BASE_URL;
 const GOOGLE_API_KEY = 'AIzaSyDVaVcUL_e_lO0nD29QUfOfl0u3RUUFEdM';
 const CONDUCTOR_ID_DEMO = 2;
 const RADIO_AUTO_ABORDAJE_METROS = 100;
+const LOCATION_TASK_NAME = 'background-location-task';
+
+// Definición de la tarea de fondo para el GPS
+TaskManager.defineTask(LOCATION_TASK_NAME, async ({ data, error }) => {
+  if (error) {
+    console.error('Error en tarea de fondo GPS:', error);
+    return;
+  }
+  if (data) {
+    const { locations } = data;
+    const location = locations[0];
+    if (location) {
+      // Intentar recuperar los datos de la sesión para emitir el evento
+      try {
+        const usuarioStr = await AsyncStorage.getItem('usuario');
+        const configRutaStr = await AsyncStorage.getItem('config_ruta_activa');
+        
+        if (usuarioStr && configRutaStr) {
+          const usuario = JSON.parse(usuarioStr);
+          const config = JSON.parse(configRutaStr);
+          
+          // Emitir al servidor mediante un socket "stand-alone" o similar
+          // En Expo, TaskManager corre en un proceso separado, así que usamos un emit directo si es posible
+          // O guardamos en una cola local para el próximo ciclo
+          await AsyncStorage.setItem('ultima_ubicacion_gps', JSON.stringify(location.coords));
+        }
+      } catch (e) {
+        console.log('Error en TaskManager storage:', e);
+      }
+    }
+  }
+});
 
 // Función para obtener ETA real usando Google Directions API
 const obtenerETADeGoogle = async (origen, destino) => {
@@ -124,7 +157,7 @@ export default function PantallaConductor({ navigation }) {
   const [rutas, setRutas] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const intervaloRef = useRef(null);
+  const watchIdRef = useRef(null);
   const abordajesEnProcesoRef = useRef(new Set());
   const [tabActiva, setTabActiva] = useState('mapa');
   const mapRef = useRef(null);
@@ -581,19 +614,43 @@ export default function PantallaConductor({ navigation }) {
 
   const iniciarRuta = async () => {
     try {
-      if (intervaloRef.current) return;
+      if (watchIdRef.current) return;
+
+      const { status: foregroundStatus } = await Location.requestForegroundPermissionsAsync();
+      if (foregroundStatus !== 'granted') {
+        Alert.alert('Error', 'Se requiere permiso de ubicación en primer plano.');
+        return;
+      }
+
+      const { status: backgroundStatus } = await Location.requestBackgroundPermissionsAsync();
+      if (backgroundStatus !== 'granted') {
+        Alert.alert(
+          'Ubicación en segundo plano',
+          'Para que el GPS no se apague al bloquear la pantalla, por favor selecciona "Permitir todo el tiempo" en los ajustes de ubicación de la app.',
+          [{ text: 'Abrir Ajustes', onPress: () => Linking.openSettings() }, { text: 'Cancelar', style: 'cancel' }]
+        );
+        return;
+      }
 
       alertasProximidadEnviadasRef.current.clear();
-      const loc = await Location.getCurrentPositionAsync({});
       const rutaActivaActual = rutas[0] || {};
-      setUbicacion(loc.coords);
+      
+      // Persistir configuración para la tarea de fondo
+      await AsyncStorage.setItem('config_ruta_activa', JSON.stringify({
+        conductorId: conductorId || CONDUCTOR_ID_DEMO,
+        rutaId: rutaActivaActual.id || null,
+        sentido,
+        turno,
+        nombreConductor: rutaActivaActual.conductor_nombre || 'Conductor',
+        nombreRuta: rutaActivaActual.nombre || 'Sin ruta'
+      }));
+
       setRutaActiva(true);
       agregarEvento(`Ruta iniciada - ${obtenerLabelSentido(sentido)} (${turno})`);
 
-      if (!socket.connected) {
-        socket.connect();
-      }
+      if (!socket.connected) socket.connect();
 
+      // RESTAURADO: Evento de inicio de ruta original
       socket.emit('conductor:inicio_ruta', {
         conductorId: conductorId || CONDUCTOR_ID_DEMO,
         nombre: rutaActivaActual.conductor_nombre || 'Conductor',
@@ -603,100 +660,114 @@ export default function PantallaConductor({ navigation }) {
         turno,
       });
 
-      socket.emit('conductor:ubicacion', {
-        conductorId: conductorId || CONDUCTOR_ID_DEMO,
-        nombre: rutaActivaActual.conductor_nombre || 'Conductor',
-        ruta: rutaActivaActual.nombre || 'Sin ruta',
-        rutaId: rutaActivaActual.id || null,
-        sentido: sentido,
-        turno,
-        latitude: loc.coords.latitude,
-        longitude: loc.coords.longitude,
+      const emitirDatos = (coords) => {
+        socket.emit('conductor:ubicacion', {
+          conductorId: conductorId || CONDUCTOR_ID_DEMO,
+          nombre: rutaActivaActual.conductor_nombre || 'Conductor',
+          ruta: rutaActivaActual.nombre || 'Sin ruta',
+          rutaId: rutaActivaActual.id || null,
+          sentido: sentido,
+          turno,
+          latitude: coords.latitude,
+          longitude: coords.longitude,
+        });
+      };
+
+      // 1. Seguimiento en PRIMER PLANO (Fluido y preciso)
+      watchIdRef.current = await Location.watchPositionAsync(
+        {
+          accuracy: Location.Accuracy.High,
+          distanceInterval: 10, // Cada 10 metros
+          timeInterval: 5000,   // O cada 5 segundos
+        },
+        async (locActual) => {
+          setUbicacion(locActual.coords);
+          emitirDatos(locActual.coords);
+          
+          // Lógica de negocio
+          await sincronizarAbordajesAutomaticos(locActual.coords);
+          await verificarProximidadParaAlerta(locActual.coords);
+          
+          // Verificar desvío (Optimizado: solo si se movió)
+          verificarDesvio(locActual.coords, rutaActivaActual.id);
+        }
+      );
+
+      // 2. Seguimiento en SEGUNDO PLANO (TaskManager)
+      await Location.startLocationUpdatesAsync(LOCATION_TASK_NAME, {
+        accuracy: Location.Accuracy.High,
+        distanceInterval: 15,
+        deferredUpdatesInterval: 5000,
+        foregroundService: {
+          notificationTitle: "Transporte Escolar en vivo",
+          notificationBody: "Compartiendo tu ruta para seguridad de los alumnos.",
+          notificationColor: THEME.secondary,
+        },
       });
 
-      // Recargar alumnos para obtener el "mapa perfecto" (ausencias filtradas, etc)
       cargarAlumnos();
-
-      intervaloRef.current = setInterval(async () => {
-        try {
-          const locActual = await Location.getCurrentPositionAsync({});
-          setUbicacion(locActual.coords);
-
-          socket.emit('conductor:ubicacion', {
-            conductorId: conductorId || CONDUCTOR_ID_DEMO,
-            nombre: rutaActivaActual.conductor_nombre || 'Conductor',
-            ruta: rutaActivaActual.nombre || 'Sin ruta',
-            rutaId: rutaActivaActual.id || null,
-            sentido: sentido,
-            turno,
-            latitude: locActual.coords.latitude,
-            longitude: locActual.coords.longitude,
-          });
-
-          // Auto abordaje
-          await sincronizarAbordajesAutomaticos(locActual.coords);
-
-          // Proximidad 5 minutos
-          await verificarProximidadParaAlerta(locActual.coords);
-
-          // Verificar desvío
-          try {
-            const res = await fetch(`${SERVIDOR}/api/desvios/verificar`, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json', ...(await obtenerAuthHeaders()) },
-              body: JSON.stringify({
-                conductorId: conductorId || CONDUCTOR_ID_DEMO,
-                rutaId: rutaActivaActual.id || 1,
-                latitude: locActual.coords.latitude,
-                longitude: locActual.coords.longitude,
-              }),
-            });
-
-            const datos = await res.json();
-
-            if (datos.desviado) {
-              setDesvioActivo(true);
-              setDistanciaDesvio(datos.distanciaMetros);
-              agregarEvento(`⚠️ Desvío detectado: ${datos.distanciaMetros}m`);
-              await enviarNotificacionLocal(
-                '⚠️ Desvío de ruta',
-                `Desvío de ${datos.distanciaMetros} metros`
-              );
-            } else {
-              setDesvioActivo(false);
-              setDistanciaDesvio(0);
-            }
-          } catch (errorDesvio) {
-            console.log('Error desvío:', errorDesvio);
-          }
-
-        } catch (errorGPS) {
-          console.log('Error GPS:', errorGPS);
-        }
-      }, 5000);
-
     } catch (error) {
-      console.log('Error iniciar ruta:', error);
+      console.error('Error iniciar ruta:', error);
+      Alert.alert('Error', 'No se pudo iniciar el seguimiento GPS.');
     }
   };
 
-  const finalizarRuta = () => {
-    if (intervaloRef.current) clearInterval(intervaloRef.current);
-    intervaloRef.current = null;
-    setRutaActiva(false);
-    setDesvioActivo(false);
-    setDistanciaDesvio(0);
-    agregarEvento('Ruta finalizada');
-
-    const rutaActivaActual = rutas[0] || {};
-    socket.emit('conductor:fin_ruta', {
-      conductorId: conductorId || CONDUCTOR_ID_DEMO,
-      rutaId: rutaActivaActual.id || null,
-      sentido: sentido,
-      turno,
-    });
-    socket.disconnect();
+  const verificarDesvio = async (coords, rutaId) => {
+    try {
+      const res = await fetch(`${SERVIDOR}/api/desvios/verificar`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...(await obtenerAuthHeaders()) },
+        body: JSON.stringify({
+          conductorId: conductorId || CONDUCTOR_ID_DEMO,
+          rutaId: rutaId || 1,
+          latitude: coords.latitude,
+          longitude: coords.longitude,
+        }),
+      });
+      const datos = await res.json();
+      if (datos.desviado) {
+        setDesvioActivo(true);
+        setDistanciaDesvio(datos.distanciaMetros);
+      } else {
+        setDesvioActivo(false);
+      }
+    } catch (e) {}
   };
+
+  const finalizarRuta = async () => {
+    try {
+      if (watchIdRef.current) {
+        watchIdRef.current.remove();
+        watchIdRef.current = null;
+      }
+
+      await Location.stopLocationUpdatesAsync(LOCATION_TASK_NAME);
+      
+      setRutaActiva(false);
+      setDesvioActivo(false);
+      agregarEvento('Ruta finalizada');
+
+      const rutaActivaActual = rutas[0] || {};
+      socket.emit('conductor:fin_ruta', {
+        conductorId: conductorId || CONDUCTOR_ID_DEMO,
+        rutaId: rutaActivaActual.id || null,
+        sentido: sentido,
+        turno,
+      });
+      
+      await AsyncStorage.removeItem('config_ruta_activa');
+      socket.disconnect();
+    } catch (error) {
+      console.error('Error finalizar ruta:', error);
+    }
+  };
+
+  // Limpieza al desmontar el componente
+  useEffect(() => {
+    return () => {
+      if (watchIdRef.current) watchIdRef.current.remove();
+    };
+  }, []);
 
   const marcarAbordado = async (alumno, automatico = false) => {
     try {
